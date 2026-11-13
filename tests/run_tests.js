@@ -377,5 +377,17 @@ test('a profile fixes lines, legato and chords without rendering them', () => {
   }
 });
 
+test('a profile measured on CC1 is looked up by each note\'s CC1, not its velocity', () => {
+  const cc1Profile = Object.assign({}, profile, { dynamics: 'cc1' });
+  const extra = [{ beat: 3.5, kind: 'ch', status: 0xb0, d1: 1, d2: 40 }, { beat: 5.5, kind: 'ch', status: 0xb0, d1: 1, d2: 120 }];
+  const m = NPVF.parseMidi(S.part([{ beat: 4, beats: 1, pitch: 64, vel: 100 }, { beat: 6, beats: 1, pitch: 64, vel: 100 }], { extra }));
+  const r = NPVF.fromProfile(m, cc1Profile);
+  ok(r.preferCC11, 'asks for CC11');
+  near(r.measured[0].delay * 1000, NPVF.profileAt(profile, 64, 40).delayMs, 1e-9, 'CC1 40');
+  near(r.measured[1].delay * 1000, NPVF.profileAt(profile, 64, 120).delayMs, 1e-9, 'CC1 120');
+  const p = NPVF.plan(r, { volumeTarget: 'cc11' });
+  ok(p.changes.every(c => c.newVel === 100) && p.changes.every(c => c.cc11 < 100), 'velocity kept, CC11 down on the loud key');
+});
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

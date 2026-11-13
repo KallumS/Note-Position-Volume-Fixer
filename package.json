@@ -7,6 +7,8 @@
   "scripts": {
     "build": "node tools/build.js",
     "test": "node tests/run_tests.js",
-    "test:ui": "node tools/build.js && node tests/ui_test.js"
+    "test:ui": "node tools/build.js && node tests/ui_test.js",
+    "test:lua": "lua5.4 tests/lua/test_fix.lua && node tests/lua_parity.js && lua5.4 tests/lua/test_scripts.lua",
+    "test:all": "sh tools/test.sh"
   }
 }

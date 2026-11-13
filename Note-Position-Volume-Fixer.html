@@ -189,13 +189,14 @@ kbd { font: inherit; background: var(--menu); border: 1px solid var(--rule); bor
         <select id="profile-select"><option value="">None saved yet</option></select>
       </label>
       <div class="dim" id="profile-info">A profile is learned once per patch from a test render, then fixes any part played on that patch without rendering it.</div>
+      <div class="dim">Profiles measured in REAPER (Note Fixer - Measure Libraries) open here too: they're in REAPER's resource folder, under Data › Note Fixer › Profiles.</div>
       <div class="error" id="profile-error" role="alert"></div>
       <div class="row">
-        <button type="button" id="profile-load">Open Profile…</button>
+        <button type="button" id="profile-load">Open Profiles…</button>
         <button type="button" id="profile-save" disabled>Save Profile File…</button>
         <button type="button" id="profile-delete" disabled>Delete Profile</button>
       </div>
-      <input type="file" id="profile-input" accept=".json,application/json" class="hidden">
+      <input type="file" id="profile-input" accept=".json,application/json" multiple class="hidden">
     </div>
   </div>
 
@@ -1478,12 +1479,16 @@ kbd { font: inherit; background: var(--menu); border: 1px solid var(--rule); bor
     }));
     const notes = all.filter(n => !n.keyswitch);
     if (!notes.length) throw new Error('The MIDI file has no notes to fix.');
+    // A profile measured on CC1 (long notes on the mod wheel) is looked up by each note's CC1, not its velocity.
+    const byCC1 = profile.dynamics === 'cc1';
     for (const n of notes) {
-      const at = profileAt(profile, n.pitch, n.vel);
+      n.level = byCC1 ? ccValueAt(midi, n.track, n.ch, 1, n.startTick) : n.vel;
+      if (n.level === null) n.level = 100;
+      const at = profileAt(profile, n.pitch, n.level);
       n.found = true;
       n.delay = at.delayMs / 1000;
       n.deviationDb = at.deviationDb;
-      n.delayAt = v => profileAt(profile, n.pitch, v).delayMs / 1000;
+      if (!byCC1) n.delayAt = v => profileAt(profile, n.pitch, v).delayMs / 1000;
       n.measuredOn = 'profile';
       n.check = at.outside;
       n.overlapped = false;
@@ -1500,7 +1505,7 @@ kbd { font: inherit; background: var(--menu); border: 1px solid var(--rule); bor
       version: VERSION, options: o, midi, tempo: tm, timeSig: timeSignature(midi),
       notes: all, measured: notes, typicalDelay: median(delays), polyphonic: false, metric: 'profile',
       model: { fitted: false, terms: [], dbPerVelocity: profile.dbPerVelocity },
-      warnings, profile,
+      warnings, profile, preferCC11: byCC1,
       stats: {
         notes: notes.length, found: notes.length,
         medianMs: median(delays) * 1000,
@@ -1737,7 +1742,7 @@ kbd { font: inherit; background: var(--menu); border: 1px solid var(--rule); bor
       addProfile(p);
       schedule();
     } catch (e) {
-      $('profile-error').textContent = (e instanceof SyntaxError ? file.name + " isn't a profile." : e.message) + ' Open a .json file saved from here.';
+      $('profile-error').textContent = (e instanceof SyntaxError ? file.name + " isn't a profile." : e.message) + ' Open a .json profile saved here or by Note Fixer in REAPER.';
     }
   }
 
@@ -1819,6 +1824,11 @@ kbd { font: inherit; background: var(--menu); border: 1px solid var(--rule); bor
         ? NPVF.analyse(state.midi, state.audio, analyseOptions())
         : NPVF.fromProfile(state.midi, state.profile, analyseOptions());
       if (my !== token) return;
+      // long notes measured on CC1: velocity doesn't change their level, so even them out with CC11
+      if (r.preferCC11 && state.cc11For !== state.profile) {
+        state.cc11For = state.profile;
+        document.getElementById('u-cc11').checked = true;
+      }
       state.result = r;
       state.selected = -1;
       replan();
@@ -1847,6 +1857,7 @@ kbd { font: inherit; background: var(--menu); border: 1px solid var(--rule); bor
     if (state.lossy) msgs.push('Compressed audio (MP3, AAC, Ogg) can start with a little added silence. Render a WAV or AIFF for exact timing.');
     if (p.barsAdded) msgs.push({ info: true, text: 'Some notes now start before the clip did, so the fixed file begins ' + p.barsAdded + (p.barsAdded === 1 ? ' bar' : ' bars') + ' earlier. Place it ' + p.barsAdded + (p.barsAdded === 1 ? ' bar' : ' bars') + ' before where the original starts.' });
     if (!r.profile && s.velocityChanged && radio('timing') !== 'off') msgs.push({ info: true, text: 'A new velocity can play a different sample with its own delay. Render the fixed part and check it here again; a second pass is usually smaller.' });
+    if (r.preferCC11) msgs.push({ info: true, text: 'This profile was measured on CC1, for long notes played on the mod wheel: each note is looked up by its CC1, and loudness is evened out with CC11.' });
     if (r.chords) msgs.push({ info: true, text: r.chords + (r.chords === 1 ? ' chord was' : ' chords were') + ' measured as one attack and moved together. A learned profile can also line up the notes inside a chord.' });
     if (!r.profile && r.model && !r.model.fitted && radio('volume') !== 'off') msgs.push({ info: true, text: 'Volume is left alone: too few notes were found to judge.' });
     messages(msgs);
@@ -2118,7 +2129,7 @@ kbd { font: inherit; background: var(--menu); border: 1px solid var(--rule); bor
     $('cal-choose').addEventListener('click', () => $('cal-input').click());
     $('midi-input').addEventListener('change', e => { if (e.target.files[0]) takeMidi(e.target.files[0]); e.target.value = ''; });
     $('audio-input').addEventListener('change', e => { if (e.target.files[0]) takeAudio(e.target.files[0]); e.target.value = ''; });
-    $('profile-input').addEventListener('change', e => { if (e.target.files[0]) takeProfileFile(e.target.files[0]); e.target.value = ''; });
+    $('profile-input').addEventListener('change', async e => { for (const f of Array.from(e.target.files)) await takeProfileFile(f); e.target.value = ''; });
     $('cal-input').addEventListener('change', e => { if (e.target.files[0]) takeCalAudio(e.target.files[0]); e.target.value = ''; });
     wireDrop('drop-midi', takeMidi, isMidi);
     wireDrop('drop-audio', takeAudio, isAudio);

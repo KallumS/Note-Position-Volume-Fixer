@@ -159,7 +159,7 @@
       addProfile(p);
       schedule();
     } catch (e) {
-      $('profile-error').textContent = (e instanceof SyntaxError ? file.name + " isn't a profile." : e.message) + ' Open a .json file saved from here.';
+      $('profile-error').textContent = (e instanceof SyntaxError ? file.name + " isn't a profile." : e.message) + ' Open a .json profile saved here or by Note Fixer in REAPER.';
     }
   }
 
@@ -241,6 +241,11 @@
         ? NPVF.analyse(state.midi, state.audio, analyseOptions())
         : NPVF.fromProfile(state.midi, state.profile, analyseOptions());
       if (my !== token) return;
+      // long notes measured on CC1: velocity doesn't change their level, so even them out with CC11
+      if (r.preferCC11 && state.cc11For !== state.profile) {
+        state.cc11For = state.profile;
+        document.getElementById('u-cc11').checked = true;
+      }
       state.result = r;
       state.selected = -1;
       replan();
@@ -269,6 +274,7 @@
     if (state.lossy) msgs.push('Compressed audio (MP3, AAC, Ogg) can start with a little added silence. Render a WAV or AIFF for exact timing.');
     if (p.barsAdded) msgs.push({ info: true, text: 'Some notes now start before the clip did, so the fixed file begins ' + p.barsAdded + (p.barsAdded === 1 ? ' bar' : ' bars') + ' earlier. Place it ' + p.barsAdded + (p.barsAdded === 1 ? ' bar' : ' bars') + ' before where the original starts.' });
     if (!r.profile && s.velocityChanged && radio('timing') !== 'off') msgs.push({ info: true, text: 'A new velocity can play a different sample with its own delay. Render the fixed part and check it here again; a second pass is usually smaller.' });
+    if (r.preferCC11) msgs.push({ info: true, text: 'This profile was measured on CC1, for long notes played on the mod wheel: each note is looked up by its CC1, and loudness is evened out with CC11.' });
     if (r.chords) msgs.push({ info: true, text: r.chords + (r.chords === 1 ? ' chord was' : ' chords were') + ' measured as one attack and moved together. A learned profile can also line up the notes inside a chord.' });
     if (!r.profile && r.model && !r.model.fitted && radio('volume') !== 'off') msgs.push({ info: true, text: 'Volume is left alone: too few notes were found to judge.' });
     messages(msgs);
@@ -540,7 +546,7 @@
     $('cal-choose').addEventListener('click', () => $('cal-input').click());
     $('midi-input').addEventListener('change', e => { if (e.target.files[0]) takeMidi(e.target.files[0]); e.target.value = ''; });
     $('audio-input').addEventListener('change', e => { if (e.target.files[0]) takeAudio(e.target.files[0]); e.target.value = ''; });
-    $('profile-input').addEventListener('change', e => { if (e.target.files[0]) takeProfileFile(e.target.files[0]); e.target.value = ''; });
+    $('profile-input').addEventListener('change', async e => { for (const f of Array.from(e.target.files)) await takeProfileFile(f); e.target.value = ''; });
     $('cal-input').addEventListener('change', e => { if (e.target.files[0]) takeCalAudio(e.target.files[0]); e.target.value = ''; });
     wireDrop('drop-midi', takeMidi, isMidi);
     wireDrop('drop-audio', takeAudio, isAudio);

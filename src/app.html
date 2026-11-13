@@ -188,13 +188,14 @@ kbd { font: inherit; background: var(--menu); border: 1px solid var(--rule); bor
         <select id="profile-select"><option value="">None saved yet</option></select>
       </label>
       <div class="dim" id="profile-info">A profile is learned once per patch from a test render, then fixes any part played on that patch without rendering it.</div>
+      <div class="dim">Profiles measured in REAPER (Note Fixer - Measure Libraries) open here too: they're in REAPER's resource folder, under Data › Note Fixer › Profiles.</div>
       <div class="error" id="profile-error" role="alert"></div>
       <div class="row">
-        <button type="button" id="profile-load">Open Profile…</button>
+        <button type="button" id="profile-load">Open Profiles…</button>
         <button type="button" id="profile-save" disabled>Save Profile File…</button>
         <button type="button" id="profile-delete" disabled>Delete Profile</button>
       </div>
-      <input type="file" id="profile-input" accept=".json,application/json" class="hidden">
+      <input type="file" id="profile-input" accept=".json,application/json" multiple class="hidden">
     </div>
   </div>
 

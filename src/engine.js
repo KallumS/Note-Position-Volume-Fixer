@@ -1153,12 +1153,16 @@
     }));
     const notes = all.filter(n => !n.keyswitch);
     if (!notes.length) throw new Error('The MIDI file has no notes to fix.');
+    // A profile measured on CC1 (long notes on the mod wheel) is looked up by each note's CC1, not its velocity.
+    const byCC1 = profile.dynamics === 'cc1';
     for (const n of notes) {
-      const at = profileAt(profile, n.pitch, n.vel);
+      n.level = byCC1 ? ccValueAt(midi, n.track, n.ch, 1, n.startTick) : n.vel;
+      if (n.level === null) n.level = 100;
+      const at = profileAt(profile, n.pitch, n.level);
       n.found = true;
       n.delay = at.delayMs / 1000;
       n.deviationDb = at.deviationDb;
-      n.delayAt = v => profileAt(profile, n.pitch, v).delayMs / 1000;
+      if (!byCC1) n.delayAt = v => profileAt(profile, n.pitch, v).delayMs / 1000;
       n.measuredOn = 'profile';
       n.check = at.outside;
       n.overlapped = false;
@@ -1175,7 +1179,7 @@
       version: VERSION, options: o, midi, tempo: tm, timeSig: timeSignature(midi),
       notes: all, measured: notes, typicalDelay: median(delays), polyphonic: false, metric: 'profile',
       model: { fitted: false, terms: [], dbPerVelocity: profile.dbPerVelocity },
-      warnings, profile,
+      warnings, profile, preferCC11: byCC1,
       stats: {
         notes: notes.length, found: notes.length,
         medianMs: median(delays) * 1000,
