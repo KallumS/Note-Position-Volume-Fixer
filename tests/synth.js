@@ -36,7 +36,7 @@ function expectedOnsetMs(p, v, lib) {
 }
 
 function render(midiBytes, opts) {
-  const o = Object.assign({ fs: 48000, lib: LIBRARY, tail: 1.5, noiseDb: -80, decay: 6, seed: 1 }, opts || {});
+  const o = Object.assign({ fs: 48000, lib: LIBRARY, tail: 1.5, noiseDb: -80, decay: 6, seed: 1, cc1Dynamics: false }, opts || {});
   const midi = NPVF.parseMidi(midiBytes);
   const tm = NPVF.tempoMap(midi);
   const notes = NPVF.collectNotes(midi);
@@ -46,13 +46,25 @@ function render(midiBytes, opts) {
   const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff - 0.5; };
   const noise = Math.pow(10, o.noiseDb / 20) * 3.4;
   for (let i = 0; i < out.length; i++) out[i] = rnd() * noise;
+  // With cc1Dynamics, the level is the last CC1 before the note (as long notes in many players), not velocity.
+  const cc1 = [];
+  midi.tracks.forEach((t, ti) => t.events.forEach(e => {
+    if (e.kind === 'ch' && (e.status & 0xf0) === 0xb0 && e.d1 === 1) cc1.push({ track: ti, ch: e.status & 15, tick: e.tick, v: e.d2 });
+  }));
+  const levelOf = n => {
+    if (!o.cc1Dynamics) return n.vel;
+    let v = 100, best = -1;
+    for (const c of cc1) if (c.track === n.track && c.ch === n.ch && c.tick <= n.startTick && c.tick >= best) { v = c.v; best = c.tick; }
+    return v;
+  };
   for (const n of notes) {
     if (n.pitch < 24) continue; // keyswitches make no sound
+    const level = levelOf(n);
     const f0 = 440 * Math.pow(2, (n.pitch - 69) / 12);
-    const t0 = tm.toSec(n.startTick) + o.lib.delayMs(n.pitch, n.vel) / 1000;
-    const t1 = tm.toSec(n.endTick) + o.lib.delayMs(n.pitch, n.vel) / 1000;
+    const t0 = tm.toSec(n.startTick) + o.lib.delayMs(n.pitch, level) / 1000;
+    const t1 = tm.toSec(n.endTick) + o.lib.delayMs(n.pitch, level) / 1000;
     const A = o.lib.attackMs(n.pitch) / 1000;
-    const amp = Math.pow(10, o.lib.gainDb(n.pitch, n.vel) / 20);
+    const amp = Math.pow(10, o.lib.gainDb(n.pitch, level) / 20);
     const i0 = Math.floor(t0 * o.fs);
     const i1 = Math.min(out.length, Math.ceil((t1 + 0.6) * o.fs));
     const phases = [1, 2, 3, 4, 5, 6].map(h => hash(n.pitch * 31 + h) * 6.283);
