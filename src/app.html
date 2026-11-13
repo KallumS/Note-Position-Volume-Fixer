@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Note Fixer</title>
+<meta name="description" content="Moves MIDI notes so a sample library's sound lands on the grid, and evens out notes recorded too loud or too quiet.">
+<style>
+/* The house scheme (Good Idea's docs/COLOUR.md): always dark, greys blue-shifted (R < G < B),
+   light controls with dark ink, yellow only for what is on or chosen. */
+:root {
+  --accent: #FFF200; --accent-hover: #FFF42E; --accent-held: #D1C600;
+  --control: #A9AFBA; --control-hover: #C0C6CF; --control-held: #8F96A2;
+  --ground: #23272E; --sunken: #1A1D23; --menu: #2A2F37; --rule: #3A404A;
+  --ink: #14171C; --text: #DDE1E7; --text-dim: #B0B6C0; --text-disabled: #8A919C;
+  --edge: #8A919C; --thumb: #6D7581; --roll: #111419; --focus: #F2F4F7;
+  --warn: #D2483F; --warn-text: #FF9E96;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { background: var(--ground); }
+body {
+  margin: 0; background: var(--ground); color: var(--text);
+  font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+main { max-width: 1120px; margin: 0 auto; padding: 20px 16px 48px; }
+h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+h2 { font-size: 15px; font-weight: 600; margin: 0 0 12px; }
+h3 { font-size: 13px; font-weight: 600; margin: 0 0 8px; }
+p { margin: 0 0 8px; }
+.dim { color: var(--text-dim); }
+a { color: var(--text); }
+section { border-top: 1px solid var(--rule); padding: 20px 0; }
+header { padding-bottom: 16px; }
+.row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+@media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+
+/* controls */
+button, .button {
+  font: inherit; color: var(--ink); background: var(--control); border: 0; border-radius: 6px;
+  min-height: 28px; padding: 4px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+}
+button:hover { background: var(--control-hover); }
+button:active { background: var(--control-held); }
+button:disabled { background: var(--rule); color: var(--text-disabled); cursor: default; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+input[type=number], input[type=text], select {
+  font: inherit; color: var(--text); background: var(--sunken); border: 1px solid var(--edge); border-radius: 6px;
+  min-height: 28px; padding: 3px 8px;
+}
+input[type=number] { width: 84px; }
+input[type=range] { accent-color: var(--control); width: 160px; min-height: 28px; }
+input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16px; }
+label.field { display: grid; gap: 4px; }
+label.field > span:first-child, .label { color: var(--text-dim); }
+.fields { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: end; }
+
+/* segmented: radios that look like one control; the chosen part is yellow */
+.seg { display: inline-flex; border-radius: 6px; overflow: hidden; gap: 1px; background: var(--ink); }
+.seg input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.seg label { color: var(--ink); background: var(--control); min-height: 28px; padding: 4px 12px; cursor: pointer; display: flex; align-items: center; }
+.seg label:hover { background: var(--control-hover); }
+.seg input:checked + label { background: var(--accent); }
+.seg input:checked + label:hover { background: var(--accent-hover); }
+.seg input:focus-visible + label { outline: 2px solid var(--focus); outline-offset: -2px; }
+.seg input:disabled + label { background: var(--rule); color: var(--text-disabled); cursor: default; }
+
+/* file cards */
+.drop {
+  background: var(--sunken); border: 1px dashed var(--edge); border-radius: 8px; padding: 14px; min-height: 96px;
+  display: grid; gap: 8px; align-content: start;
+}
+.drop.over { border-style: solid; border-color: var(--focus); }
+.drop .name { font-weight: 600; word-break: break-word; }
+.drop .error { color: var(--warn-text); }
+
+/* messages */
+.msg { border-left: 3px solid var(--warn); padding: 6px 10px; background: var(--sunken); color: var(--warn-text); margin: 0 0 8px; }
+.note-box { border-left: 3px solid var(--thumb); padding: 6px 10px; background: var(--sunken); margin: 0 0 8px; }
+.status { min-height: 20px; }
+
+/* results */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.tile { background: var(--sunken); border-radius: 8px; padding: 10px 12px; }
+.tile .big { font-size: 20px; font-weight: 600; }
+.tile .arrow { color: var(--text-dim); font-weight: 400; }
+canvas { display: block; width: 100%; background: var(--roll); border-radius: 6px; }
+#overview { height: 150px; cursor: pointer; margin-bottom: 12px; }
+#detail { height: 190px; }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; color: var(--text-dim); margin: 6px 0 12px; }
+.key { display: inline-block; width: 18px; height: 3px; vertical-align: middle; margin-right: 6px; }
+.tablewrap { max-height: 460px; overflow: auto; border: 1px solid var(--rule); border-radius: 6px; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; padding: 4px 10px; white-space: nowrap; }
+th:nth-child(-n+3), td:nth-child(-n+3) { text-align: left; }
+th { position: sticky; top: 0; background: var(--menu); font-weight: 600; color: var(--text); z-index: 1; }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: #22262D; }
+tbody tr[aria-selected=true] { background: var(--rule); }
+tbody tr[aria-selected=true] td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+td.check { color: var(--warn-text); text-align: left; }
+td .none { color: var(--text-dim); font-style: italic; }
+details > summary { cursor: pointer; min-height: 28px; display: flex; align-items: center; gap: 6px; list-style: none; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before { content: '▸'; color: var(--text-dim); width: 12px; }
+details[open] > summary::before { content: '▾'; }
+details[open] > summary { margin-bottom: 10px; }
+ol.steps { margin: 0; padding-left: 20px; }
+ol.steps li { margin-bottom: 6px; }
+kbd { font: inherit; background: var(--menu); border: 1px solid var(--rule); border-radius: 4px; padding: 0 4px; }
+.hidden { display: none !important; }
+@media (prefers-reduced-motion: no-preference) { button, .seg label { transition: background-color .08s; } }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Note Position &amp; Volume Fixer</h1>
+  <p class="dim">Moves MIDI notes so a sample library's sound lands where the note was written, and evens out notes that come out too loud or too quiet. Everything happens on this computer: no file leaves it.</p>
+  <details>
+    <summary>How to get the files out of your DAW and back in</summary>
+    <div class="grid2">
+      <div>
+        <h3>Ableton Live</h3>
+        <ol class="steps">
+          <li>Right-click the MIDI clip and choose <b>Export MIDI Clip…</b></li>
+          <li>Render the same clip: select it, then <b>File › Export Audio/Video</b> with <i>Render Start</i> at the clip's start, or freeze the track and drag the frozen clip to an audio track. Turn off reverb sends so each note is clear.</li>
+          <li>Drop both files below, then <b>Download Fixed MIDI</b> and drag it into the arrangement where the clip was.</li>
+        </ol>
+        <h3>Cubase</h3>
+        <ol class="steps">
+          <li>Select the part, then <b>File › Export › MIDI Loop…</b> (or MIDI File with only that track).</li>
+          <li><b>File › Export › Audio Mixdown</b> with the locators around the part, or <b>Render in Place</b>.</li>
+          <li>Import the fixed file with <b>File › Import › MIDI File…</b> at the part's position.</li>
+        </ol>
+      </div>
+      <div>
+        <h3>REAPER</h3>
+        <ol class="steps">
+          <li>Right-click the item and choose <b>Export MIDI…</b> (or glue it first).</li>
+          <li><b>Apply track/take FX to items as new take</b>, or render the time selection of the track.</li>
+          <li>Drag the fixed file onto the track at the item's start.</li>
+        </ol>
+        <h3>Both files must start at the same moment</h3>
+        <p class="dim">The audio's first sample is taken to be the MIDI file's beat 1. If the render starts somewhere else, set <b>Audio starts late by</b> under More Settings.</p>
+        <h3>Round robins</h3>
+        <p class="dim">A library that cycles samples may play a different one next time. Choose <b>Each key</b> to use one typical value per key, or learn a profile, which measures every key on its own.</p>
+      </div>
+    </div>
+  </details>
+</header>
+
+<section aria-labelledby="h-files">
+  <h2 id="h-files">1. Files</h2>
+  <div class="row" style="margin-bottom:12px">
+    <span class="label" id="src-label">Measure from</span>
+    <div class="seg" role="radiogroup" aria-labelledby="src-label">
+      <input type="radio" name="source" id="src-render" value="render" checked><label for="src-render">The part's own render</label>
+      <input type="radio" name="source" id="src-profile" value="profile"><label for="src-profile">A learned profile</label>
+    </div>
+  </div>
+  <div class="grid2">
+    <div class="drop" id="drop-midi">
+      <h3>MIDI part</h3>
+      <div class="name" id="midi-name">No MIDI file yet</div>
+      <div class="dim" id="midi-info">Drop a .mid file here.</div>
+      <div class="error" id="midi-error" role="alert"></div>
+      <div class="row">
+        <button type="button" id="midi-choose">Choose MIDI File…</button>
+        <label class="row" style="gap:6px"><span class="label">Played at</span><input type="number" id="bpm" min="20" max="400" step="0.01" placeholder="File" aria-describedby="bpm-hint"><span class="label">BPM</span></label>
+      </div>
+      <div class="dim" id="bpm-hint">Live and Cubase play an imported MIDI file at the project's tempo. If yours differs from the file's, set it here.</div>
+      <input type="file" id="midi-input" accept=".mid,.midi,audio/midi" class="hidden">
+    </div>
+    <div class="drop" id="drop-audio">
+      <h3>Its render</h3>
+      <div class="name" id="audio-name">No audio yet</div>
+      <div class="dim" id="audio-info">Drop the WAV or AIFF of this part played by the library.</div>
+      <div class="error" id="audio-error" role="alert"></div>
+      <div><button type="button" id="audio-choose">Choose Audio File…</button></div>
+      <input type="file" id="audio-input" accept=".wav,.wave,.aif,.aiff,.flac,.mp3,.m4a,.ogg,audio/*" class="hidden">
+    </div>
+    <div class="drop hidden" id="profile-box">
+      <h3>Profile</h3>
+      <label class="field"><span>Saved profiles</span>
+        <select id="profile-select"><option value="">None saved yet</option></select>
+      </label>
+      <div class="dim" id="profile-info">A profile is learned once per patch from a test render, then fixes any part played on that patch without rendering it.</div>
+      <div class="error" id="profile-error" role="alert"></div>
+      <div class="row">
+        <button type="button" id="profile-load">Open Profile…</button>
+        <button type="button" id="profile-save" disabled>Save Profile File…</button>
+        <button type="button" id="profile-delete" disabled>Delete Profile</button>
+      </div>
+      <input type="file" id="profile-input" accept=".json,application/json" class="hidden">
+    </div>
+  </div>
+
+  <details id="learn" class="hidden" style="margin-top:16px">
+    <summary>Learn a new profile</summary>
+    <ol class="steps">
+      <li>
+        <p>Choose the keys and velocities to measure, then download the test MIDI.</p>
+        <div class="fields" style="margin-bottom:8px">
+          <label class="field"><span>Lowest key</span><input type="text" id="cal-low" value="C1" size="5" aria-describedby="cal-hint"></label>
+          <label class="field"><span>Highest key</span><input type="text" id="cal-high" value="C6" size="5" aria-describedby="cal-hint"></label>
+          <label class="field"><span>Velocities</span><input type="text" id="cal-vels" value="30, 60, 90, 120" size="16"></label>
+          <label class="field"><span>Takes of each</span><input type="number" id="cal-takes" value="2" min="1" max="8"></label>
+          <label class="field"><span>Keyswitch first (optional)</span><input type="text" id="cal-ks" value="" placeholder="e.g. C-1" size="6"></label>
+          <label class="field"><span>Your project's tempo</span><input type="number" id="cal-bpm" value="120" min="20" max="400" step="0.01"></label>
+          <button type="button" id="cal-download">Download Test MIDI</button>
+        </div>
+        <p class="dim" id="cal-hint">Middle C is C3. Two takes of each catch round robins. The test plays each note on its own, two beats apart, at your project's tempo: <span id="cal-length"></span>.</p>
+      </li>
+      <li><p>In your DAW, put it on the instrument with the patch you want, render it from its first bar (no reverb), and drop the audio here.</p>
+        <div class="drop" id="drop-cal" style="min-height:0">
+          <div class="name" id="cal-name">No test render yet</div>
+          <div class="error" id="cal-error" role="alert"></div>
+          <div><button type="button" id="cal-choose">Choose Test Render…</button></div>
+          <input type="file" id="cal-input" accept=".wav,.wave,.aif,.aiff,.flac,.mp3,.m4a,.ogg,audio/*" class="hidden">
+        </div>
+      </li>
+      <li><div class="fields">
+        <label class="field"><span>Name it after the patch</span><input type="text" id="cal-title" value="" placeholder="Berlin Strings Violins 1 Staccato" size="34"></label>
+        <button type="button" id="cal-learn" disabled>Learn Profile</button>
+      </div>
+      <p class="status dim" id="cal-status" role="status"></p></li>
+    </ol>
+  </details>
+</section>
+
+<section aria-labelledby="h-settings">
+  <h2 id="h-settings">2. What to fix</h2>
+  <div class="grid2">
+    <div>
+      <h3>Timing</h3>
+      <div class="fields">
+        <div class="field"><span class="label" id="lbl-timing">Move</span>
+          <div class="seg" role="radiogroup" aria-labelledby="lbl-timing">
+            <input type="radio" name="timing" id="t-note" value="note" checked><label for="t-note">Each note</label>
+            <input type="radio" name="timing" id="t-pitch" value="pitch"><label for="t-pitch">Each key</label>
+            <input type="radio" name="timing" id="t-part" value="part"><label for="t-part">Whole part</label>
+            <input type="radio" name="timing" id="t-off" value="off"><label for="t-off">Don't move</label>
+          </div>
+        </div>
+        <label class="field"><span>Line up</span>
+          <select id="align"><option value="attack">The attack (where it's heard)</option><option value="start">The start of any sound</option></select>
+        </label>
+        <label class="field"><span>Strength <output id="strength-out">100%</output></span>
+          <input type="range" id="strength" min="0" max="100" step="5" value="100"></label>
+        <label class="field"><span>Land after the grid (ms)</span><input type="number" id="target" value="0" step="1" min="-50" max="100"></label>
+      </div>
+    </div>
+    <div>
+      <h3>Volume</h3>
+      <div class="fields">
+        <div class="field"><span class="label" id="lbl-volume">Even out</span>
+          <div class="seg" role="radiogroup" aria-labelledby="lbl-volume">
+            <input type="radio" name="volume" id="v-note" value="note" checked><label for="v-note">Each note</label>
+            <input type="radio" name="volume" id="v-pitch" value="pitch"><label for="v-pitch">Each key</label>
+            <input type="radio" name="volume" id="v-off" value="off"><label for="v-off">Off</label>
+          </div>
+        </div>
+        <div class="field"><span class="label" id="lbl-using">Using</span>
+          <div class="seg" role="radiogroup" aria-labelledby="lbl-using">
+            <input type="radio" name="using" id="u-vel" value="velocity" checked><label for="u-vel">Velocity</label>
+            <input type="radio" name="using" id="u-cc11" value="cc11"><label for="u-cc11">CC11</label>
+          </div>
+        </div>
+        <label class="field"><span>Leave alone within (dB)</span><input type="number" id="tolerance" value="1" step="0.5" min="0" max="12"></label>
+        <label class="field"><span>dB per velocity step</span><input type="number" id="dbvel" step="0.05" min="0.02" max="2" placeholder="Auto"></label>
+      </div>
+    </div>
+  </div>
+  <details style="margin-top:16px">
+    <summary>More settings</summary>
+    <div class="fields">
+      <label class="field"><span>Latest a sound can start (ms)</span><input type="number" id="maxdelay" value="400" min="50" max="2000" step="10"></label>
+      <label class="field"><span>How far notes can differ (ms)</span><input type="number" id="spread" value="120" min="10" max="1000" step="10"></label>
+      <label class="field"><span>Audio starts late by (ms)</span><input type="number" id="offset" value="0" step="1"></label>
+      <label class="field"><span>Keyswitches at or below</span><input type="text" id="ksmax" value="" placeholder="None" size="6"></label>
+      <label class="field"><span>Measure on</span>
+        <select id="method"><option value="auto">Each note's harmonics (Auto)</option><option value="harmonics">Each note's harmonics only</option><option value="whole">The whole sound</option></select></label>
+      <label class="field"><span>CC11 for a correct note</span><input type="number" id="cc11base" value="100" min="1" max="127"></label>
+      <label class="field"><span>dB per CC11 step</span><input type="number" id="dbcc" value="0.3" step="0.05" min="0.02" max="2"></label>
+      <label class="row" style="min-height:28px"><input type="checkbox" id="moveends" checked> Move note ends too</label>
+    </div>
+    <p class="dim" style="margin-top:8px">Keyswitches, program changes and CCs written on a note's start move with it, so the articulation still arrives first.</p>
+  </details>
+</section>
+
+<section aria-labelledby="h-results">
+  <div class="row" style="justify-content:space-between; margin-bottom:12px">
+    <h2 id="h-results" style="margin:0">3. Results</h2>
+    <div class="row">
+      <span class="dim" id="download-note"></span>
+      <button type="button" id="download" disabled>Download Fixed MIDI</button>
+    </div>
+  </div>
+  <p class="status dim" id="status" role="status">Add a MIDI file and its render to begin.</p>
+  <div id="messages"></div>
+  <div id="results" class="hidden">
+    <div class="tiles" id="tiles"></div>
+    <canvas id="overview" role="img" aria-label="The whole part"></canvas>
+    <div class="legend" aria-hidden="true">
+      <span><span class="key" style="background:#A9AFBA"></span>Written</span>
+      <span><span class="key" style="background:#F2F4F7"></span>Heard</span>
+      <span><span class="key" style="background:#6D7581"></span>Sound level</span>
+      <span><span class="key" style="background:#FFF200"></span>Selected note</span>
+    </div>
+    <p id="detail-text" aria-live="polite"></p>
+    <canvas id="detail" role="img" aria-label="The selected note"></canvas>
+    <h3 style="margin-top:16px">Every note</h3>
+    <p class="dim">Use <kbd>↑</kbd> and <kbd>↓</kbd> in the table to step through notes. <b>Check</b> marks notes worth listening to: measured under other notes, at the edge of where they could be, or far from other notes on the same key.</p>
+    <div class="tablewrap"><table id="table" aria-label="Notes">
+      <thead><tr><th>#</th><th>Key</th><th>Bar</th><th>Velocity</th><th id="th-late">Heard late (ms)</th><th>Loudness (dB)</th><th>Move (ms)</th><th>New velocity</th><th>Measured on</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </div>
+</section>
+</main>
+<!--ENGINE-->
+<!--APP-->
+</body>
+</html>

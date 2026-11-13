@@ -306,6 +306,29 @@ test('Each key and Whole part modes', () => {
   ok(max(shifts) - Math.min.apply(null, shifts) < 1.1, 'one shift for all');
 });
 
+test('only the chosen track is measured and moved', () => {
+  const a = NPVF.parseMidi(line);
+  const other = NPVF.parseMidi(S.part([{ beat: 4.25, beats: 0.25, pitch: 40, vel: 90 }]));
+  const two = NPVF.parseMidi(NPVF.writeMidi({ format: 1, division: 480, tracks: [a.tracks[0], { events: other.tracks[0].events.filter(e => e.kind === 'ch' || e.type === 0x2f) }] }));
+  ok(NPVF.noteTracks(two).length === 2, 'two tracks with notes');
+  const r = NPVF.analyse(two, lineAudio, { track: 0 });
+  ok(r.measured.length === LINE.length, 'measured ' + r.measured.length);
+  const out = NPVF.collectNotes(NPVF.parseMidi(NPVF.applyPlan(NPVF.plan(r))));
+  ok(out.find(n => n.pitch === 40).startTick === Math.round(4.25 * 480), 'other track untouched');
+});
+
+test('a part played at another tempo than its file says', () => {
+  const at90 = S.part(eighths(), { bpm: 90 });
+  const audio90 = S.render(at90);
+  const r = NPVF.analyse(NPVF.parseMidi(line), audio90, { tempoBpm: 90 }); // the file says 120
+  ok(r.stats.found >= 19, 'found ' + r.stats.found);
+  near(r.stats.medianMs, lineResult.stats.medianMs, 3);
+  const out = NPVF.collectNotes(NPVF.parseMidi(NPVF.applyPlan(NPVF.plan(r))));
+  const tm90 = NPVF.tempoMap(NPVF.parseMidi(line), 90);
+  const c = NPVF.plan(r).changes[0];
+  near((tm90.toSec(out[0].startTick) - tm90.toSec(c.note.startTick)) * 1000, c.shiftMs, 1.2, 'shift at 90 BPM');
+});
+
 console.log('Learned profiles');
 
 const cal = NPVF.calibrationMidi({ low: 36, high: 84, velocities: [40, 80, 120] });

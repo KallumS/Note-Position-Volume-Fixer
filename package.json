@@ -1,0 +1,12 @@
+{
+  "name": "note-position-volume-fixer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Moves MIDI notes so a sample library's sound lands on the grid, and evens out notes recorded too loud or too quiet.",
+  "license": "MIT",
+  "scripts": {
+    "build": "node tools/build.js",
+    "test": "node tests/run_tests.js",
+    "test:ui": "node tools/build.js && node tests/ui_test.js"
+  }
+}

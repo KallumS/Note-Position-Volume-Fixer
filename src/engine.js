@@ -199,7 +199,8 @@
     return notes;
   }
 
-  function tempoMap(midi) {
+  /** Seconds for ticks. `bpm`, if given, replaces the file's tempo (a DAW may play it at its own). */
+  function tempoMap(midi, bpm) {
     const ev = [];
     midi.tracks.forEach(t => t.events.forEach(e => {
       if (e.kind === 'meta' && e.type === 0x51 && e.data.length === 3) {
@@ -209,6 +210,7 @@
     ev.sort((a, b) => a.tick - b.tick);
     const ppq = midi.division;
     const segs = [{ tick: 0, sec: 0, uspq: 500000 }];
+    if (bpm > 0) { ev.length = 0; segs[0].uspq = 60e6 / bpm; }
     for (const e of ev) {
       if (e.uspq <= 0) continue;
       const last = segs[segs.length - 1];
@@ -219,7 +221,7 @@
     function segForSec(sec) { let s = segs[0]; for (const g of segs) { if (g.sec <= sec) s = g; else break; } return s; }
     return {
       segs,
-      hasTempo: ev.length > 0,
+      hasTempo: ev.length > 0 || bpm > 0,
       toSec(tick) { const s = segForTick(tick); return s.sec + (tick - s.tick) * s.uspq / 1e6 / ppq; },
       toTick(sec) { const s = segForSec(sec); return s.tick + (sec - s.sec) * 1e6 * ppq / s.uspq; },
       bpmAtStart: 60e6 / segs[0].uspq,
@@ -234,6 +236,20 @@
       }
     }));
     return { num, den, barTicks: Math.round(num * midi.division * 4 / den) };
+  }
+
+  /** Tracks that hold notes, with their names, for choosing one. */
+  function noteTracks(midi) {
+    const out = [];
+    midi.tracks.forEach((t, i) => {
+      const count = t.events.filter(isNoteOn).length;
+      if (!count) return;
+      const nm = t.events.find(e => e.kind === 'meta' && e.type === 0x03);
+      let name = '';
+      if (nm) { try { name = new TextDecoder().decode(nm.data); } catch (e) { name = String.fromCharCode.apply(null, nm.data); } }
+      out.push({ index: i, name: name.trim(), notes: count });
+    });
+    return out;
   }
 
   const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -502,6 +518,8 @@
     spreadMs: 120,       // how far one note can differ from the part's typical delay
     audioOffsetMs: 0,    // positive if the audio starts later than the MIDI file's beginning
     keyswitchMax: -1,    // notes at or below this pitch are keyswitches (never measured)
+    track: -1,           // only this track's notes (index into midi.tracks); -1 for all
+    tempoBpm: 0,         // if set, the tempo the part was played at, instead of the file's
     minRiseDb: 6,        // a sound must rise at least this much to count as found
     method: 'auto',      // 'auto': each note's harmonics, else the whole sound | 'harmonics' | 'whole'
   };
@@ -627,12 +645,12 @@
 
   function analyse(midi, audio, options) {
     const o = Object.assign({}, ANALYSE_DEFAULTS, options || {});
-    const tm = tempoMap(midi);
+    const tm = tempoMap(midi, o.tempoBpm);
     const ts = timeSignature(midi);
     const fs = audio.sampleRate, x = audio.data;
     const off = o.audioOffsetMs / 1000;
     const maxDelay = o.maxDelayMs / 1000, spread = o.spreadMs / 1000;
-    const all = collectNotes(midi).map(n => Object.assign(n, {
+    const all = collectNotes(midi).filter(n => o.track < 0 || n.track === o.track).map(n => Object.assign(n, {
       t: tm.toSec(n.startTick) + off,
       tEnd: tm.toSec(n.endTick) + off,
       keyswitch: n.pitch <= o.keyswitchMax,
@@ -1129,8 +1147,8 @@
   function fromProfile(midi, profile, options) {
     checkProfile(profile);
     const o = Object.assign({}, ANALYSE_DEFAULTS, options || {}, { audioOffsetMs: 0, alignTo: profile.alignTo });
-    const tm = tempoMap(midi);
-    const all = collectNotes(midi).map(n => Object.assign(n, {
+    const tm = tempoMap(midi, o.tempoBpm);
+    const all = collectNotes(midi).filter(n => o.track < 0 || n.track === o.track).map(n => Object.assign(n, {
       t: tm.toSec(n.startTick), tEnd: tm.toSec(n.endTick), keyswitch: n.pitch <= o.keyswitchMax,
     }));
     const notes = all.filter(n => !n.keyswitch);
@@ -1171,14 +1189,27 @@
 
   // ------------------------------------------------------- test helpers
 
+  /** Seconds a calibration part lasts. */
+  function calibrationLength(o) {
+    o = Object.assign({ low: 48, high: 72, step: 1, velocities: [40, 80, 120], repeats: 1, bpm: 120, noteBeats: 0.5, gapBeats: 1.5 }, o || {});
+    const keys = Math.floor((o.high - o.low) / o.step) + 1;
+    return (8 + keys * o.velocities.length * o.repeats * (o.noteBeats + o.gapBeats)) * 60 / o.bpm;
+  }
+
   /** A calibration part: every pitch in a range at several velocities, each note on its own. */
   function calibrationMidi(o) {
-    o = Object.assign({ low: 48, high: 72, step: 1, velocities: [40, 80, 120], repeats: 1, bpm: 120, noteBeats: 0.5, gapBeats: 2, ppq: 480, channel: 0 }, o || {});
+    o = Object.assign({ low: 48, high: 72, step: 1, velocities: [40, 80, 120], repeats: 1, bpm: 120, noteBeats: 0.5, gapBeats: 1.5, ppq: 480, channel: 0, keyswitch: null }, o || {});
     const events = [];
     let order = 0;
     const uspq = Math.round(60e6 / o.bpm);
     events.push({ tick: 0, kind: 'meta', type: 0x51, data: new Uint8Array([(uspq >> 16) & 255, (uspq >> 8) & 255, uspq & 255]), order: order++ });
     events.push({ tick: 0, kind: 'meta', type: 0x58, data: new Uint8Array([4, 2, 24, 8]), order: order++ });
+    events.push({ tick: 0, kind: 'meta', type: 0x03, data: new Uint8Array(Array.from('Test notes', ch => ch.charCodeAt(0))), order: order++ });
+    if (o.keyswitch !== null && o.keyswitch !== undefined) {
+      // the articulation, chosen during the empty first bar
+      events.push({ tick: o.ppq * 2, kind: 'ch', status: 0x90 | o.channel, d1: o.keyswitch, d2: 100, order: order++ });
+      events.push({ tick: o.ppq * 2 + o.ppq / 4, kind: 'ch', status: 0x80 | o.channel, d1: o.keyswitch, d2: 64, order: order++ });
+    }
     let tick = o.ppq * 4; // one empty bar first
     for (const v of o.velocities) {
       for (let p = o.low; p <= o.high; p += o.step) {
@@ -1208,11 +1239,11 @@
 
   return {
     VERSION,
-    parseMidi, writeMidi, collectNotes, tempoMap, timeSignature, noteName, position,
+    parseMidi, writeMidi, collectNotes, noteTracks, tempoMap, timeSignature, noteName, position,
     decodeAudio, kWeight, envelope,
     analyse, plan, applyPlan,
     learnProfile, checkProfile, profileAt, fromProfile,
-    calibrationMidi, encodeWav,
+    calibrationMidi, calibrationLength, encodeWav,
     ANALYSE_DEFAULTS, PLAN_DEFAULTS,
     _internal: { median, quantile, stdev, robustFit, findOnset, harmonicPower, loudness },
   };

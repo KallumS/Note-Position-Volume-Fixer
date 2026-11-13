@@ -1,0 +1,2201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Note Fixer</title>
+<meta name="generator" content="Note Position &amp; Volume Fixer 1.0.0">
+<meta name="description" content="Moves MIDI notes so a sample library's sound lands on the grid, and evens out notes recorded too loud or too quiet.">
+<style>
+/* The house scheme (Good Idea's docs/COLOUR.md): always dark, greys blue-shifted (R < G < B),
+   light controls with dark ink, yellow only for what is on or chosen. */
+:root {
+  --accent: #FFF200; --accent-hover: #FFF42E; --accent-held: #D1C600;
+  --control: #A9AFBA; --control-hover: #C0C6CF; --control-held: #8F96A2;
+  --ground: #23272E; --sunken: #1A1D23; --menu: #2A2F37; --rule: #3A404A;
+  --ink: #14171C; --text: #DDE1E7; --text-dim: #B0B6C0; --text-disabled: #8A919C;
+  --edge: #8A919C; --thumb: #6D7581; --roll: #111419; --focus: #F2F4F7;
+  --warn: #D2483F; --warn-text: #FF9E96;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { background: var(--ground); }
+body {
+  margin: 0; background: var(--ground); color: var(--text);
+  font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+main { max-width: 1120px; margin: 0 auto; padding: 20px 16px 48px; }
+h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+h2 { font-size: 15px; font-weight: 600; margin: 0 0 12px; }
+h3 { font-size: 13px; font-weight: 600; margin: 0 0 8px; }
+p { margin: 0 0 8px; }
+.dim { color: var(--text-dim); }
+a { color: var(--text); }
+section { border-top: 1px solid var(--rule); padding: 20px 0; }
+header { padding-bottom: 16px; }
+.row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+@media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+
+/* controls */
+button, .button {
+  font: inherit; color: var(--ink); background: var(--control); border: 0; border-radius: 6px;
+  min-height: 28px; padding: 4px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+}
+button:hover { background: var(--control-hover); }
+button:active { background: var(--control-held); }
+button:disabled { background: var(--rule); color: var(--text-disabled); cursor: default; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+input[type=number], input[type=text], select {
+  font: inherit; color: var(--text); background: var(--sunken); border: 1px solid var(--edge); border-radius: 6px;
+  min-height: 28px; padding: 3px 8px;
+}
+input[type=number] { width: 84px; }
+input[type=range] { accent-color: var(--control); width: 160px; min-height: 28px; }
+input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16px; }
+label.field { display: grid; gap: 4px; }
+label.field > span:first-child, .label { color: var(--text-dim); }
+.fields { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: end; }
+
+/* segmented: radios that look like one control; the chosen part is yellow */
+.seg { display: inline-flex; border-radius: 6px; overflow: hidden; gap: 1px; background: var(--ink); }
+.seg input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.seg label { color: var(--ink); background: var(--control); min-height: 28px; padding: 4px 12px; cursor: pointer; display: flex; align-items: center; }
+.seg label:hover { background: var(--control-hover); }
+.seg input:checked + label { background: var(--accent); }
+.seg input:checked + label:hover { background: var(--accent-hover); }
+.seg input:focus-visible + label { outline: 2px solid var(--focus); outline-offset: -2px; }
+.seg input:disabled + label { background: var(--rule); color: var(--text-disabled); cursor: default; }
+
+/* file cards */
+.drop {
+  background: var(--sunken); border: 1px dashed var(--edge); border-radius: 8px; padding: 14px; min-height: 96px;
+  display: grid; gap: 8px; align-content: start;
+}
+.drop.over { border-style: solid; border-color: var(--focus); }
+.drop .name { font-weight: 600; word-break: break-word; }
+.drop .error { color: var(--warn-text); }
+
+/* messages */
+.msg { border-left: 3px solid var(--warn); padding: 6px 10px; background: var(--sunken); color: var(--warn-text); margin: 0 0 8px; }
+.note-box { border-left: 3px solid var(--thumb); padding: 6px 10px; background: var(--sunken); margin: 0 0 8px; }
+.status { min-height: 20px; }
+
+/* results */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.tile { background: var(--sunken); border-radius: 8px; padding: 10px 12px; }
+.tile .big { font-size: 20px; font-weight: 600; }
+.tile .arrow { color: var(--text-dim); font-weight: 400; }
+canvas { display: block; width: 100%; background: var(--roll); border-radius: 6px; }
+#overview { height: 150px; cursor: pointer; margin-bottom: 12px; }
+#detail { height: 190px; }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; color: var(--text-dim); margin: 6px 0 12px; }
+.key { display: inline-block; width: 18px; height: 3px; vertical-align: middle; margin-right: 6px; }
+.tablewrap { max-height: 460px; overflow: auto; border: 1px solid var(--rule); border-radius: 6px; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; padding: 4px 10px; white-space: nowrap; }
+th:nth-child(-n+3), td:nth-child(-n+3) { text-align: left; }
+th { position: sticky; top: 0; background: var(--menu); font-weight: 600; color: var(--text); z-index: 1; }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: #22262D; }
+tbody tr[aria-selected=true] { background: var(--rule); }
+tbody tr[aria-selected=true] td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+td.check { color: var(--warn-text); text-align: left; }
+td .none { color: var(--text-dim); font-style: italic; }
+details > summary { cursor: pointer; min-height: 28px; display: flex; align-items: center; gap: 6px; list-style: none; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before { content: '▸'; color: var(--text-dim); width: 12px; }
+details[open] > summary::before { content: '▾'; }
+details[open] > summary { margin-bottom: 10px; }
+ol.steps { margin: 0; padding-left: 20px; }
+ol.steps li { margin-bottom: 6px; }
+kbd { font: inherit; background: var(--menu); border: 1px solid var(--rule); border-radius: 4px; padding: 0 4px; }
+.hidden { display: none !important; }
+@media (prefers-reduced-motion: no-preference) { button, .seg label { transition: background-color .08s; } }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Note Position &amp; Volume Fixer</h1>
+  <p class="dim">Moves MIDI notes so a sample library's sound lands where the note was written, and evens out notes that come out too loud or too quiet. Everything happens on this computer: no file leaves it.</p>
+  <details>
+    <summary>How to get the files out of your DAW and back in</summary>
+    <div class="grid2">
+      <div>
+        <h3>Ableton Live</h3>
+        <ol class="steps">
+          <li>Right-click the MIDI clip and choose <b>Export MIDI Clip…</b></li>
+          <li>Render the same clip: select it, then <b>File › Export Audio/Video</b> with <i>Render Start</i> at the clip's start, or freeze the track and drag the frozen clip to an audio track. Turn off reverb sends so each note is clear.</li>
+          <li>Drop both files below, then <b>Download Fixed MIDI</b> and drag it into the arrangement where the clip was.</li>
+        </ol>
+        <h3>Cubase</h3>
+        <ol class="steps">
+          <li>Select the part, then <b>File › Export › MIDI Loop…</b> (or MIDI File with only that track).</li>
+          <li><b>File › Export › Audio Mixdown</b> with the locators around the part, or <b>Render in Place</b>.</li>
+          <li>Import the fixed file with <b>File › Import › MIDI File…</b> at the part's position.</li>
+        </ol>
+      </div>
+      <div>
+        <h3>REAPER</h3>
+        <ol class="steps">
+          <li>Right-click the item and choose <b>Export MIDI…</b> (or glue it first).</li>
+          <li><b>Apply track/take FX to items as new take</b>, or render the time selection of the track.</li>
+          <li>Drag the fixed file onto the track at the item's start.</li>
+        </ol>
+        <h3>Both files must start at the same moment</h3>
+        <p class="dim">The audio's first sample is taken to be the MIDI file's beat 1. If the render starts somewhere else, set <b>Audio starts late by</b> under More Settings.</p>
+        <h3>Round robins</h3>
+        <p class="dim">A library that cycles samples may play a different one next time. Choose <b>Each key</b> to use one typical value per key, or learn a profile, which measures every key on its own.</p>
+      </div>
+    </div>
+  </details>
+</header>
+
+<section aria-labelledby="h-files">
+  <h2 id="h-files">1. Files</h2>
+  <div class="row" style="margin-bottom:12px">
+    <span class="label" id="src-label">Measure from</span>
+    <div class="seg" role="radiogroup" aria-labelledby="src-label">
+      <input type="radio" name="source" id="src-render" value="render" checked><label for="src-render">The part's own render</label>
+      <input type="radio" name="source" id="src-profile" value="profile"><label for="src-profile">A learned profile</label>
+    </div>
+  </div>
+  <div class="grid2">
+    <div class="drop" id="drop-midi">
+      <h3>MIDI part</h3>
+      <div class="name" id="midi-name">No MIDI file yet</div>
+      <div class="dim" id="midi-info">Drop a .mid file here.</div>
+      <div class="error" id="midi-error" role="alert"></div>
+      <div class="row">
+        <button type="button" id="midi-choose">Choose MIDI File…</button>
+        <label class="row" style="gap:6px"><span class="label">Played at</span><input type="number" id="bpm" min="20" max="400" step="0.01" placeholder="File" aria-describedby="bpm-hint"><span class="label">BPM</span></label>
+      </div>
+      <div class="dim" id="bpm-hint">Live and Cubase play an imported MIDI file at the project's tempo. If yours differs from the file's, set it here.</div>
+      <input type="file" id="midi-input" accept=".mid,.midi,audio/midi" class="hidden">
+    </div>
+    <div class="drop" id="drop-audio">
+      <h3>Its render</h3>
+      <div class="name" id="audio-name">No audio yet</div>
+      <div class="dim" id="audio-info">Drop the WAV or AIFF of this part played by the library.</div>
+      <div class="error" id="audio-error" role="alert"></div>
+      <div><button type="button" id="audio-choose">Choose Audio File…</button></div>
+      <input type="file" id="audio-input" accept=".wav,.wave,.aif,.aiff,.flac,.mp3,.m4a,.ogg,audio/*" class="hidden">
+    </div>
+    <div class="drop hidden" id="profile-box">
+      <h3>Profile</h3>
+      <label class="field"><span>Saved profiles</span>
+        <select id="profile-select"><option value="">None saved yet</option></select>
+      </label>
+      <div class="dim" id="profile-info">A profile is learned once per patch from a test render, then fixes any part played on that patch without rendering it.</div>
+      <div class="error" id="profile-error" role="alert"></div>
+      <div class="row">
+        <button type="button" id="profile-load">Open Profile…</button>
+        <button type="button" id="profile-save" disabled>Save Profile File…</button>
+        <button type="button" id="profile-delete" disabled>Delete Profile</button>
+      </div>
+      <input type="file" id="profile-input" accept=".json,application/json" class="hidden">
+    </div>
+  </div>
+
+  <details id="learn" class="hidden" style="margin-top:16px">
+    <summary>Learn a new profile</summary>
+    <ol class="steps">
+      <li>
+        <p>Choose the keys and velocities to measure, then download the test MIDI.</p>
+        <div class="fields" style="margin-bottom:8px">
+          <label class="field"><span>Lowest key</span><input type="text" id="cal-low" value="C1" size="5" aria-describedby="cal-hint"></label>
+          <label class="field"><span>Highest key</span><input type="text" id="cal-high" value="C6" size="5" aria-describedby="cal-hint"></label>
+          <label class="field"><span>Velocities</span><input type="text" id="cal-vels" value="30, 60, 90, 120" size="16"></label>
+          <label class="field"><span>Takes of each</span><input type="number" id="cal-takes" value="2" min="1" max="8"></label>
+          <label class="field"><span>Keyswitch first (optional)</span><input type="text" id="cal-ks" value="" placeholder="e.g. C-1" size="6"></label>
+          <label class="field"><span>Your project's tempo</span><input type="number" id="cal-bpm" value="120" min="20" max="400" step="0.01"></label>
+          <button type="button" id="cal-download">Download Test MIDI</button>
+        </div>
+        <p class="dim" id="cal-hint">Middle C is C3. Two takes of each catch round robins. The test plays each note on its own, two beats apart, at your project's tempo: <span id="cal-length"></span>.</p>
+      </li>
+      <li><p>In your DAW, put it on the instrument with the patch you want, render it from its first bar (no reverb), and drop the audio here.</p>
+        <div class="drop" id="drop-cal" style="min-height:0">
+          <div class="name" id="cal-name">No test render yet</div>
+          <div class="error" id="cal-error" role="alert"></div>
+          <div><button type="button" id="cal-choose">Choose Test Render…</button></div>
+          <input type="file" id="cal-input" accept=".wav,.wave,.aif,.aiff,.flac,.mp3,.m4a,.ogg,audio/*" class="hidden">
+        </div>
+      </li>
+      <li><div class="fields">
+        <label class="field"><span>Name it after the patch</span><input type="text" id="cal-title" value="" placeholder="Berlin Strings Violins 1 Staccato" size="34"></label>
+        <button type="button" id="cal-learn" disabled>Learn Profile</button>
+      </div>
+      <p class="status dim" id="cal-status" role="status"></p></li>
+    </ol>
+  </details>
+</section>
+
+<section aria-labelledby="h-settings">
+  <h2 id="h-settings">2. What to fix</h2>
+  <div class="grid2">
+    <div>
+      <h3>Timing</h3>
+      <div class="fields">
+        <div class="field"><span class="label" id="lbl-timing">Move</span>
+          <div class="seg" role="radiogroup" aria-labelledby="lbl-timing">
+            <input type="radio" name="timing" id="t-note" value="note" checked><label for="t-note">Each note</label>
+            <input type="radio" name="timing" id="t-pitch" value="pitch"><label for="t-pitch">Each key</label>
+            <input type="radio" name="timing" id="t-part" value="part"><label for="t-part">Whole part</label>
+            <input type="radio" name="timing" id="t-off" value="off"><label for="t-off">Don't move</label>
+          </div>
+        </div>
+        <label class="field"><span>Line up</span>
+          <select id="align"><option value="attack">The attack (where it's heard)</option><option value="start">The start of any sound</option></select>
+        </label>
+        <label class="field"><span>Strength <output id="strength-out">100%</output></span>
+          <input type="range" id="strength" min="0" max="100" step="5" value="100"></label>
+        <label class="field"><span>Land after the grid (ms)</span><input type="number" id="target" value="0" step="1" min="-50" max="100"></label>
+      </div>
+    </div>
+    <div>
+      <h3>Volume</h3>
+      <div class="fields">
+        <div class="field"><span class="label" id="lbl-volume">Even out</span>
+          <div class="seg" role="radiogroup" aria-labelledby="lbl-volume">
+            <input type="radio" name="volume" id="v-note" value="note" checked><label for="v-note">Each note</label>
+            <input type="radio" name="volume" id="v-pitch" value="pitch"><label for="v-pitch">Each key</label>
+            <input type="radio" name="volume" id="v-off" value="off"><label for="v-off">Off</label>
+          </div>
+        </div>
+        <div class="field"><span class="label" id="lbl-using">Using</span>
+          <div class="seg" role="radiogroup" aria-labelledby="lbl-using">
+            <input type="radio" name="using" id="u-vel" value="velocity" checked><label for="u-vel">Velocity</label>
+            <input type="radio" name="using" id="u-cc11" value="cc11"><label for="u-cc11">CC11</label>
+          </div>
+        </div>
+        <label class="field"><span>Leave alone within (dB)</span><input type="number" id="tolerance" value="1" step="0.5" min="0" max="12"></label>
+        <label class="field"><span>dB per velocity step</span><input type="number" id="dbvel" step="0.05" min="0.02" max="2" placeholder="Auto"></label>
+      </div>
+    </div>
+  </div>
+  <details style="margin-top:16px">
+    <summary>More settings</summary>
+    <div class="fields">
+      <label class="field"><span>Latest a sound can start (ms)</span><input type="number" id="maxdelay" value="400" min="50" max="2000" step="10"></label>
+      <label class="field"><span>How far notes can differ (ms)</span><input type="number" id="spread" value="120" min="10" max="1000" step="10"></label>
+      <label class="field"><span>Audio starts late by (ms)</span><input type="number" id="offset" value="0" step="1"></label>
+      <label class="field"><span>Keyswitches at or below</span><input type="text" id="ksmax" value="" placeholder="None" size="6"></label>
+      <label class="field"><span>Measure on</span>
+        <select id="method"><option value="auto">Each note's harmonics (Auto)</option><option value="harmonics">Each note's harmonics only</option><option value="whole">The whole sound</option></select></label>
+      <label class="field"><span>CC11 for a correct note</span><input type="number" id="cc11base" value="100" min="1" max="127"></label>
+      <label class="field"><span>dB per CC11 step</span><input type="number" id="dbcc" value="0.3" step="0.05" min="0.02" max="2"></label>
+      <label class="row" style="min-height:28px"><input type="checkbox" id="moveends" checked> Move note ends too</label>
+    </div>
+    <p class="dim" style="margin-top:8px">Keyswitches, program changes and CCs written on a note's start move with it, so the articulation still arrives first.</p>
+  </details>
+</section>
+
+<section aria-labelledby="h-results">
+  <div class="row" style="justify-content:space-between; margin-bottom:12px">
+    <h2 id="h-results" style="margin:0">3. Results</h2>
+    <div class="row">
+      <span class="dim" id="download-note"></span>
+      <button type="button" id="download" disabled>Download Fixed MIDI</button>
+    </div>
+  </div>
+  <p class="status dim" id="status" role="status">Add a MIDI file and its render to begin.</p>
+  <div id="messages"></div>
+  <div id="results" class="hidden">
+    <div class="tiles" id="tiles"></div>
+    <canvas id="overview" role="img" aria-label="The whole part"></canvas>
+    <div class="legend" aria-hidden="true">
+      <span><span class="key" style="background:#A9AFBA"></span>Written</span>
+      <span><span class="key" style="background:#F2F4F7"></span>Heard</span>
+      <span><span class="key" style="background:#6D7581"></span>Sound level</span>
+      <span><span class="key" style="background:#FFF200"></span>Selected note</span>
+    </div>
+    <p id="detail-text" aria-live="polite"></p>
+    <canvas id="detail" role="img" aria-label="The selected note"></canvas>
+    <h3 style="margin-top:16px">Every note</h3>
+    <p class="dim">Use <kbd>↑</kbd> and <kbd>↓</kbd> in the table to step through notes. <b>Check</b> marks notes worth listening to: measured under other notes, at the edge of where they could be, or far from other notes on the same key.</p>
+    <div class="tablewrap"><table id="table" aria-label="Notes">
+      <thead><tr><th>#</th><th>Key</th><th>Bar</th><th>Velocity</th><th id="th-late">Heard late (ms)</th><th>Loudness (dB)</th><th>Move (ms)</th><th>New velocity</th><th>Measured on</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </div>
+</section>
+</main>
+<script>
+/*
+ * Note Position & Volume Fixer - the engine.
+ *
+ * Reads a MIDI file and a render of it (WAV or AIFF), finds where each note
+ * is actually heard and how loud it is, and writes a corrected MIDI file:
+ * notes moved so their sound lands where they were written, and velocities
+ * (or CC11) changed where a note is louder or quieter than its neighbours
+ * would predict.
+ *
+ * No browser, no DAW: the same file runs in the page and under Node, which
+ * is how the tests drive it (tests/run_tests.js).
+ */
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory();
+  else root.NPVF = factory();
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  const VERSION = '1.0.0';
+
+  // ------------------------------------------------------------------ bytes
+
+  function toBytes(input) {
+    if (input instanceof Uint8Array) return input;
+    if (input instanceof ArrayBuffer) return new Uint8Array(input);
+    if (ArrayBuffer.isView(input)) return new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
+    throw new Error('Expected bytes.');
+  }
+  const str4 = (b, p) => String.fromCharCode(b[p], b[p + 1], b[p + 2], b[p + 3]);
+  const u16 = (b, p) => (b[p] << 8) | b[p + 1];
+  const u32 = (b, p) => ((b[p] << 24) >>> 0) + ((b[p + 1] << 16) | (b[p + 2] << 8) | b[p + 3]);
+  const u16le = (b, p) => b[p] | (b[p + 1] << 8);
+  const u32le = (b, p) => (b[p] | (b[p + 1] << 8) | (b[p + 2] << 16)) + ((b[p + 3] << 24) >>> 0);
+
+  // ------------------------------------------------------------------- MIDI
+
+  function readVLQ(b, pos, end) {
+    let v = 0, c, n = 0;
+    do {
+      if (pos.i >= end || n++ > 4) throw new Error('The MIDI file is damaged (a length runs past the end).');
+      c = b[pos.i++];
+      v = (v * 128) + (c & 0x7f);
+    } while (c & 0x80);
+    return v;
+  }
+
+  /** Parse a Standard MIDI File (format 0 or 1). Every event keeps a unique `order`. */
+  function parseMidi(input) {
+    const b = toBytes(input);
+    if (b.length < 14 || str4(b, 0) !== 'MThd') throw new Error("This isn't a MIDI file.");
+    const hlen = u32(b, 4);
+    const format = u16(b, 8), division = u16(b, 12);
+    if (division & 0x8000) throw new Error('This MIDI file is timed in SMPTE frames. Export it in bars and beats instead.');
+    if (division === 0) throw new Error('The MIDI file is damaged (zero ticks per beat).');
+    let p = 8 + hlen, order = 0;
+    const tracks = [];
+    while (p + 8 <= b.length) {
+      const id = str4(b, p), len = u32(b, p + 4);
+      p += 8;
+      const end = Math.min(b.length, p + len);
+      if (id === 'MTrk') {
+        const events = [];
+        const pos = { i: p };
+        let tick = 0, running = 0;
+        while (pos.i < end) {
+          tick += readVLQ(b, pos, end);
+          const st = b[pos.i];
+          if (st === 0xff) {
+            pos.i++;
+            const type = b[pos.i++];
+            const l = readVLQ(b, pos, end);
+            const data = b.slice(pos.i, pos.i + l);
+            pos.i += l;
+            events.push({ tick, kind: 'meta', type, data, order: order++ });
+            if (type === 0x2f) break;
+          } else if (st === 0xf0 || st === 0xf7) {
+            pos.i++;
+            const l = readVLQ(b, pos, end);
+            const data = b.slice(pos.i, pos.i + l);
+            pos.i += l;
+            events.push({ tick, kind: 'sysex', status: st, data, order: order++ });
+            running = 0;
+          } else {
+            if (st & 0x80) { running = st; pos.i++; }
+            else if (!running) throw new Error('The MIDI file is damaged (data with no status byte).');
+            const hi = running & 0xf0;
+            const two = !(hi === 0xc0 || hi === 0xd0);
+            const d1 = b[pos.i++] & 0x7f;
+            const d2 = two ? b[pos.i++] & 0x7f : 0;
+            events.push({ tick, kind: 'ch', status: running, d1, d2, order: order++ });
+          }
+        }
+        const last = events[events.length - 1];
+        if (!last || !(last.kind === 'meta' && last.type === 0x2f)) {
+          events.push({ tick, kind: 'meta', type: 0x2f, data: new Uint8Array(0), order: order++ });
+        }
+        tracks.push({ events });
+      }
+      p = end;
+    }
+    if (!tracks.length) throw new Error('The MIDI file has no tracks.');
+    return { format, division, tracks, nextOrder: order };
+  }
+
+  function writeVLQ(out, v) {
+    v = Math.max(0, Math.round(v));
+    const stack = [v & 0x7f];
+    v = Math.floor(v / 128);
+    while (v > 0) { stack.push((v & 0x7f) | 0x80); v = Math.floor(v / 128); }
+    for (let i = stack.length - 1; i >= 0; i--) out.push(stack[i]);
+  }
+
+  const isNoteOn = e => e.kind === 'ch' && (e.status & 0xf0) === 0x90 && e.d2 > 0;
+  const isNoteOff = e => e.kind === 'ch' && ((e.status & 0xf0) === 0x80 || ((e.status & 0xf0) === 0x90 && e.d2 === 0));
+  const isEOT = e => e.kind === 'meta' && e.type === 0x2f;
+
+  /** Same-tick order: meta and sysex, then note-offs, then everything else in its original order. */
+  function eventClass(e) {
+    if (e.kind === 'meta' || e.kind === 'sysex') return 0;
+    if (isNoteOff(e)) return 1;
+    return 2;
+  }
+
+  function sortTrack(events) {
+    const body = events.filter(e => !isEOT(e));
+    body.sort((a, b) => (a.tick - b.tick) || (eventClass(a) - eventClass(b)) || (a.order - b.order));
+    const lastTick = body.length ? body[body.length - 1].tick : 0;
+    const eot = events.find(isEOT);
+    const eotTick = Math.max(lastTick, eot ? eot.tick : 0);
+    body.push({ tick: eotTick, kind: 'meta', type: 0x2f, data: new Uint8Array(0), order: eot ? eot.order : 1e12 });
+    return body;
+  }
+
+  function writeMidi(midi) {
+    const out = [];
+    const pushStr = s => { for (let i = 0; i < 4; i++) out.push(s.charCodeAt(i)); };
+    const push32 = v => out.push((v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255);
+    pushStr('MThd'); push32(6);
+    const format = midi.tracks.length > 1 ? 1 : midi.format;
+    out.push(0, format, (midi.tracks.length >> 8) & 255, midi.tracks.length & 255);
+    out.push((midi.division >> 8) & 255, midi.division & 255);
+    for (const t of midi.tracks) {
+      const evs = sortTrack(t.events.map(e => Object.assign({}, e, { tick: Math.max(0, Math.round(e.tick)) })));
+      const body = [];
+      let prev = 0;
+      for (const e of evs) {
+        writeVLQ(body, e.tick - prev);
+        prev = e.tick;
+        if (e.kind === 'meta') {
+          body.push(0xff, e.type);
+          writeVLQ(body, e.data.length);
+          for (const x of e.data) body.push(x);
+        } else if (e.kind === 'sysex') {
+          body.push(e.status);
+          writeVLQ(body, e.data.length);
+          for (const x of e.data) body.push(x);
+        } else {
+          const hi = e.status & 0xf0;
+          body.push(e.status, e.d1 & 0x7f);
+          if (!(hi === 0xc0 || hi === 0xd0)) body.push(e.d2 & 0x7f);
+        }
+      }
+      pushStr('MTrk'); push32(body.length);
+      for (const x of body) out.push(x);
+    }
+    return new Uint8Array(out);
+  }
+
+  /** Pair note-ons with note-offs (first on, first off). Notes keep references to their two events. */
+  function collectNotes(midi) {
+    const notes = [];
+    midi.tracks.forEach((t, ti) => {
+      const open = new Map();
+      let lastTick = 0;
+      for (const e of t.events) {
+        lastTick = Math.max(lastTick, e.tick);
+        if (e.kind !== 'ch') continue;
+        const ch = e.status & 0x0f;
+        const key = ch * 128 + e.d1;
+        if (isNoteOn(e)) {
+          if (!open.has(key)) open.set(key, []);
+          open.get(key).push(e);
+        } else if (isNoteOff(e)) {
+          const q = open.get(key);
+          if (q && q.length) {
+            const on = q.shift();
+            notes.push({ track: ti, ch, pitch: e.d1, vel: on.d2, startTick: on.tick, endTick: e.tick, on, off: e });
+          }
+        }
+      }
+      for (const q of open.values()) {
+        for (const on of q) {
+          notes.push({ track: ti, ch: on.status & 0x0f, pitch: on.d1, vel: on.d2, startTick: on.tick, endTick: Math.max(lastTick, on.tick + 1), on, off: null });
+        }
+      }
+    });
+    notes.sort((a, b) => (a.startTick - b.startTick) || (a.pitch - b.pitch) || (a.on.order - b.on.order));
+    notes.forEach((n, i) => { n.index = i; });
+    return notes;
+  }
+
+  /** Seconds for ticks. `bpm`, if given, replaces the file's tempo (a DAW may play it at its own). */
+  function tempoMap(midi, bpm) {
+    const ev = [];
+    midi.tracks.forEach(t => t.events.forEach(e => {
+      if (e.kind === 'meta' && e.type === 0x51 && e.data.length === 3) {
+        ev.push({ tick: e.tick, uspq: (e.data[0] << 16) | (e.data[1] << 8) | e.data[2] });
+      }
+    }));
+    ev.sort((a, b) => a.tick - b.tick);
+    const ppq = midi.division;
+    const segs = [{ tick: 0, sec: 0, uspq: 500000 }];
+    if (bpm > 0) { ev.length = 0; segs[0].uspq = 60e6 / bpm; }
+    for (const e of ev) {
+      if (e.uspq <= 0) continue;
+      const last = segs[segs.length - 1];
+      if (e.tick === last.tick) { last.uspq = e.uspq; continue; }
+      segs.push({ tick: e.tick, sec: last.sec + (e.tick - last.tick) * last.uspq / 1e6 / ppq, uspq: e.uspq });
+    }
+    function segForTick(tick) { let s = segs[0]; for (const g of segs) { if (g.tick <= tick) s = g; else break; } return s; }
+    function segForSec(sec) { let s = segs[0]; for (const g of segs) { if (g.sec <= sec) s = g; else break; } return s; }
+    return {
+      segs,
+      hasTempo: ev.length > 0 || bpm > 0,
+      toSec(tick) { const s = segForTick(tick); return s.sec + (tick - s.tick) * s.uspq / 1e6 / ppq; },
+      toTick(sec) { const s = segForSec(sec); return s.tick + (sec - s.sec) * 1e6 * ppq / s.uspq; },
+      bpmAtStart: 60e6 / segs[0].uspq,
+    };
+  }
+
+  function timeSignature(midi) {
+    let num = 4, den = 4, best = Infinity;
+    midi.tracks.forEach(t => t.events.forEach(e => {
+      if (e.kind === 'meta' && e.type === 0x58 && e.data.length >= 2 && e.tick < best) {
+        best = e.tick; num = e.data[0] || 4; den = Math.pow(2, e.data[1]);
+      }
+    }));
+    return { num, den, barTicks: Math.round(num * midi.division * 4 / den) };
+  }
+
+  /** Tracks that hold notes, with their names, for choosing one. */
+  function noteTracks(midi) {
+    const out = [];
+    midi.tracks.forEach((t, i) => {
+      const count = t.events.filter(isNoteOn).length;
+      if (!count) return;
+      const nm = t.events.find(e => e.kind === 'meta' && e.type === 0x03);
+      let name = '';
+      if (nm) { try { name = new TextDecoder().decode(nm.data); } catch (e) { name = String.fromCharCode.apply(null, nm.data); } }
+      out.push({ index: i, name: name.trim(), notes: count });
+    });
+    return out;
+  }
+
+  const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  /** Middle C (60) is C3, as Ableton Live and Cubase name it. */
+  function noteName(p, middleCOctave) {
+    const o = middleCOctave === undefined ? 3 : middleCOctave;
+    return NAMES[p % 12] + (Math.floor(p / 12) - (5 - o));
+  }
+
+  function position(tick, midi, ts) {
+    const ppq = midi.division;
+    const beatTicks = ppq * 4 / ts.den;
+    const bar = Math.floor(tick / ts.barTicks);
+    const rem = tick - bar * ts.barTicks;
+    const beat = Math.floor(rem / beatTicks);
+    const sixteenth = Math.floor((rem - beat * beatTicks) / (ppq / 4));
+    return (bar + 1) + '.' + (beat + 1) + '.' + (sixteenth + 1);
+  }
+
+  // ------------------------------------------------------------------ audio
+
+  function readSample(b, p, bits, fmt, little) {
+    if (fmt === 'float') {
+      const dv = new DataView(b.buffer, b.byteOffset + p, bits / 8);
+      return bits === 32 ? dv.getFloat32(0, little) : dv.getFloat64(0, little);
+    }
+    if (bits === 8) return little ? (b[p] - 128) / 128 : ((b[p] << 24) >> 24) / 128; // WAV 8-bit is unsigned, AIFF signed
+    if (bits === 16) {
+      const v = little ? (b[p] | (b[p + 1] << 8)) : ((b[p] << 8) | b[p + 1]);
+      return ((v << 16) >> 16) / 32768;
+    }
+    if (bits === 24) {
+      const v = little ? (b[p] | (b[p + 1] << 8) | (b[p + 2] << 16)) : ((b[p] << 16) | (b[p + 1] << 8) | b[p + 2]);
+      return ((v << 8) >> 8) / 8388608;
+    }
+    if (bits === 32) {
+      const v = little ? (b[p] | (b[p + 1] << 8) | (b[p + 2] << 16) | (b[p + 3] << 24)) : ((b[p] << 24) | (b[p + 1] << 16) | (b[p + 2] << 8) | b[p + 3]);
+      return v / 2147483648;
+    }
+    throw new Error('Unsupported bit depth: ' + bits + '.');
+  }
+
+  function mixToMono(b, offset, frames, channels, bits, fmt, little) {
+    const bytes = bits / 8, stride = bytes * channels;
+    const avail = Math.floor((b.length - offset) / stride);
+    const n = Math.max(0, Math.min(frames, avail));
+    const out = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      let s = 0;
+      const base = offset + i * stride;
+      for (let c = 0; c < channels; c++) s += readSample(b, base + c * bytes, bits, fmt, little);
+      out[i] = s / channels;
+    }
+    return out;
+  }
+
+  function decodeWav(b) {
+    let p = 12, fmt = null, data = null;
+    while (p + 8 <= b.length) {
+      const id = str4(b, p);
+      let len = u32le(b, p + 4);
+      const body = p + 8;
+      if (id === 'fmt ') {
+        let tag = u16le(b, body);
+        const channels = u16le(b, body + 2), sampleRate = u32le(b, body + 4), bits = u16le(b, body + 14);
+        if (tag === 0xfffe && len >= 26) tag = u16le(b, body + 24);
+        fmt = { tag, channels, sampleRate, bits };
+      } else if (id === 'data') {
+        if (len === 0xffffffff || body + len > b.length) len = b.length - body;
+        data = { offset: body, len };
+      }
+      p = body + len + (len & 1);
+    }
+    if (!fmt || !data) throw new Error('The WAV file has no audio in it.');
+    if (fmt.tag !== 1 && fmt.tag !== 3) throw new Error('This WAV is compressed. Render a plain PCM or 32-bit float WAV.');
+    const kind = fmt.tag === 3 ? 'float' : 'int';
+    const frames = Math.floor(data.len / (fmt.channels * fmt.bits / 8));
+    return { sampleRate: fmt.sampleRate, channels: fmt.channels, data: mixToMono(b, data.offset, frames, fmt.channels, fmt.bits, kind, true) };
+  }
+
+  function extended80(b, p) {
+    const exp = ((b[p] & 0x7f) << 8) | b[p + 1];
+    const hi = u32(b, p + 2), lo = u32(b, p + 6);
+    if (exp === 0 && hi === 0 && lo === 0) return 0;
+    return (hi * 4294967296 + lo) * Math.pow(2, exp - 16383 - 63);
+  }
+
+  function decodeAiff(b) {
+    const aifc = str4(b, 8) === 'AIFC';
+    let p = 12, comm = null, ssnd = null;
+    while (p + 8 <= b.length) {
+      const id = str4(b, p);
+      let len = u32(b, p + 4);
+      const body = p + 8;
+      if (body + len > b.length) len = b.length - body;
+      if (id === 'COMM') {
+        comm = { channels: u16(b, body), frames: u32(b, body + 2), bits: u16(b, body + 6), sampleRate: extended80(b, body + 8), comp: aifc ? str4(b, body + 18) : 'NONE' };
+      } else if (id === 'SSND') {
+        ssnd = { offset: body + 8 + u32(b, body) };
+      }
+      p = body + len + (len & 1);
+    }
+    if (!comm || !ssnd) throw new Error('The AIFF file has no audio in it.');
+    let kind = 'int', little = false, bits = comm.bits;
+    const c = comm.comp;
+    if (c === 'sowt') little = true;
+    else if (c === 'fl32' || c === 'FL32') { kind = 'float'; bits = 32; }
+    else if (c === 'fl64' || c === 'FL64') { kind = 'float'; bits = 64; }
+    else if (c !== 'NONE' && c !== 'twos') throw new Error('This AIFF is compressed (' + c + '). Render an uncompressed AIFF or WAV.');
+    bits = Math.ceil(bits / 8) * 8;
+    return { sampleRate: comm.sampleRate, channels: comm.channels, data: mixToMono(b, ssnd.offset, comm.frames, comm.channels, bits, kind, little) };
+  }
+
+  /** WAV or AIFF to mono. Anything else is left to the browser (see the page). */
+  function decodeAudio(input) {
+    const b = toBytes(input);
+    if (b.length >= 12 && str4(b, 0) === 'RIFF' && str4(b, 8) === 'WAVE') return decodeWav(b);
+    if (b.length >= 12 && str4(b, 0) === 'FORM' && (str4(b, 8) === 'AIFF' || str4(b, 8) === 'AIFC')) return decodeAiff(b);
+    throw new Error('Not a WAV or AIFF file.');
+  }
+
+  // -------------------------------------------------------------------- DSP
+
+  function biquadRun(x, c, out) {
+    const y = out || new Float32Array(x.length);
+    let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+    const { b0, b1, b2, a1, a2 } = c;
+    for (let n = 0; n < x.length; n++) {
+      const xn = x[n];
+      const yn = b0 * xn + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+      x2 = x1; x1 = xn; y2 = y1; y1 = yn;
+      y[n] = yn;
+    }
+    return y;
+  }
+
+  function norm(b0, b1, b2, a0, a1, a2) {
+    return { b0: b0 / a0, b1: b1 / a0, b2: b2 / a0, a1: a1 / a0, a2: a2 / a0 };
+  }
+
+  /** ITU-R BS.1770 K-weighting, the curve loudness meters use, at any sample rate. */
+  function kWeight(x, fs) {
+    let w0 = 2 * Math.PI * 1681.974450955533 / fs;
+    const A = Math.pow(10, 3.999843853973347 / 40);
+    let alpha = Math.sin(w0) / (2 * 0.7071752369554196);
+    let cs = Math.cos(w0), sa = 2 * Math.sqrt(A) * alpha;
+    const shelf = norm(
+      A * ((A + 1) + (A - 1) * cs + sa), -2 * A * ((A - 1) + (A + 1) * cs), A * ((A + 1) + (A - 1) * cs - sa),
+      (A + 1) - (A - 1) * cs + sa, 2 * ((A - 1) - (A + 1) * cs), (A + 1) - (A - 1) * cs - sa);
+    w0 = 2 * Math.PI * 38.13547087602444 / fs;
+    alpha = Math.sin(w0) / (2 * 0.5003270373238773);
+    cs = Math.cos(w0);
+    const hp = norm((1 + cs) / 2, -(1 + cs), (1 + cs) / 2, 1 + alpha, -2 * cs, 1 - alpha);
+    const y = biquadRun(x, shelf);
+    return biquadRun(y, hp, y);
+  }
+
+  function bandpass(fc, q, fs) {
+    const w0 = 2 * Math.PI * fc / fs, alpha = Math.sin(w0) / (2 * q), cs = Math.cos(w0);
+    return norm(alpha, 0, -alpha, 1 + alpha, -2 * cs, 1 - alpha);
+  }
+
+  /** Forward then backward, so the filter adds no delay of its own. */
+  function zeroPhase(x, c) {
+    const y = biquadRun(x, c);
+    y.reverse();
+    biquadRun(y, c, y);
+    return y.reverse();
+  }
+
+  /**
+   * Mean power in a centred window every `hop` seconds over [s0, s1) samples.
+   * `squared` says the input is already power. Returns { lin, db, t0, hop }.
+   */
+  function envelope(sig, fs, hop, win, s0, s1, squared) {
+    s0 = Math.max(0, s0 || 0);
+    s1 = Math.min(sig.length, s1 === undefined ? sig.length : s1);
+    const n = Math.max(0, Math.floor((s1 - s0) / (hop * fs)));
+    const half = Math.max(1, Math.round(win * fs / 2));
+    const lin = new Float32Array(n), db = new Float32Array(n);
+    const sq = squared ? (i => sig[i]) : (i => sig[i] * sig[i]);
+    let lo = Math.max(0, s0 - half), hi = lo, sum = 0;
+    for (let k = 0; k < n; k++) {
+      const c = s0 + Math.round(k * hop * fs);
+      const a = Math.max(0, c - half), b = Math.min(sig.length, c + half);
+      while (hi < b) sum += sq(hi++);
+      while (lo < a) sum -= sq(lo++);
+      const v = Math.max(0, sum) / Math.max(1, b - a);
+      lin[k] = v;
+      db[k] = 10 * Math.log10(v + 1e-12);
+    }
+    return { lin, db, t0: s0 / fs, hop };
+  }
+
+  // ------------------------------------------------------------ statistics
+
+  function median(a) {
+    if (!a.length) return NaN;
+    const s = Float64Array.from(a).sort();
+    const m = s.length >> 1;
+    return s.length & 1 ? s[m] : (s[m - 1] + s[m]) / 2;
+  }
+  function quantile(a, q) {
+    if (!a.length) return NaN;
+    const s = Float64Array.from(a).sort();
+    const i = Math.min(s.length - 1, Math.max(0, (s.length - 1) * q));
+    const lo = Math.floor(i), f = i - lo;
+    return lo + 1 < s.length ? s[lo] * (1 - f) + s[lo + 1] * f : s[lo];
+  }
+  function stdev(a) {
+    if (a.length < 2) return 0;
+    const m = a.reduce((x, y) => x + y, 0) / a.length;
+    return Math.sqrt(a.reduce((x, y) => x + (y - m) * (y - m), 0) / (a.length - 1));
+  }
+
+  function solve(M, v) {
+    const n = v.length;
+    const A = M.map((row, i) => row.slice().concat([v[i]]));
+    for (let c = 0; c < n; c++) {
+      let piv = c;
+      for (let r = c + 1; r < n; r++) if (Math.abs(A[r][c]) > Math.abs(A[piv][c])) piv = r;
+      [A[c], A[piv]] = [A[piv], A[c]];
+      const d = A[c][c];
+      if (Math.abs(d) < 1e-12) return null;
+      for (let r = 0; r < n; r++) {
+        if (r === c) continue;
+        const f = A[r][c] / d;
+        for (let k = c; k <= n; k++) A[r][k] -= f * A[c][k];
+      }
+    }
+    return A.map((row, i) => row[n] / row[i]);
+  }
+
+  /** Least squares that a few loud or quiet notes cannot drag (Huber weights). */
+  function robustFit(X, y) {
+    const n = y.length, p = X[0].length;
+    let w = new Array(n).fill(1), beta = null, scale = 1;
+    for (let it = 0; it < 30; it++) {
+      const M = Array.from({ length: p }, () => new Array(p).fill(0));
+      const v = new Array(p).fill(0);
+      for (let i = 0; i < n; i++) {
+        for (let a = 0; a < p; a++) {
+          v[a] += w[i] * X[i][a] * y[i];
+          for (let b = 0; b < p; b++) M[a][b] += w[i] * X[i][a] * X[i][b];
+        }
+      }
+      for (let a = 1; a < p; a++) M[a][a] += 1e-6;
+      const nb = solve(M, v);
+      if (!nb) break;
+      beta = nb;
+      const r = y.map((yi, i) => yi - X[i].reduce((s, x, a) => s + x * beta[a], 0));
+      scale = Math.max(0.3, 1.4826 * median(r.map(Math.abs)));
+      const k = 1.345 * scale;
+      w = r.map(ri => (Math.abs(ri) <= k ? 1 : k / Math.abs(ri)));
+    }
+    return { beta, scale };
+  }
+
+  // -------------------------------------------------------------- analysis
+
+  const ANALYSE_DEFAULTS = {
+    alignTo: 'attack',   // 'attack': where the attack is heard; 'start': where any sound begins
+    attackDb: 12,        // 'attack' is this many dB below the note's first peak
+    startDb: 30,         // 'start' is this many dB below it (never closer than 3 dB to the noise)
+    maxDelayMs: 400,     // the latest a note's sound can start after its MIDI note
+    spreadMs: 120,       // how far one note can differ from the part's typical delay
+    audioOffsetMs: 0,    // positive if the audio starts later than the MIDI file's beginning
+    keyswitchMax: -1,    // notes at or below this pitch are keyswitches (never measured)
+    track: -1,           // only this track's notes (index into midi.tracks); -1 for all
+    tempoBpm: 0,         // if set, the tempo the part was played at, instead of the file's
+    minRiseDb: 6,        // a sound must rise at least this much to count as found
+    method: 'auto',      // 'auto': each note's harmonics, else the whole sound | 'harmonics' | 'whole'
+  };
+
+  /**
+   * Power in a note's harmonics, each band-passed without delay. Bands that another
+   * note sounding at the same time also fills (`others`, in Hz) are left out where
+   * the note has bands of its own, so a chord's notes can be told apart.
+   */
+  function harmonicPower(x, fs, s0, s1, f0, others) {
+    const seg = x.subarray(Math.max(0, s0), Math.min(x.length, s1));
+    const pow = new Float32Array(seg.length);
+    const narrow = others && others.length > 0;
+    // Alone, a wide band reacts fastest. Beside other notes, a narrow, steeper band keeps them out.
+    const bw = narrow ? Math.max(f0 * 0.12, 8) : Math.max(f0 * 0.5, 20);
+    const bands = [];
+    for (let h = 1; h <= 16; h++) {
+      const fc = h * f0;
+      if (fc > Math.min(10000, fs * 0.45)) break;
+      let gap = Infinity;
+      for (const g of others || []) {
+        const k = Math.max(1, Math.round(fc / g));
+        gap = Math.min(gap, Math.abs(k * g - fc), Math.abs((k + 1) * g - fc), k > 1 ? Math.abs((k - 1) * g - fc) : Infinity);
+      }
+      bands.push({ fc, gap });
+    }
+    let use = narrow ? bands.filter(b => b.gap > 2.5 * bw) : bands;
+    if (!use.length) use = bands.slice().sort((a, b) => b.gap - a.gap).slice(0, 1);
+    for (const band of use.slice(0, 8)) {
+      const c = bandpass(band.fc, band.fc / bw, fs);
+      let y = zeroPhase(seg, c);
+      if (narrow) y = zeroPhase(y, c);
+      for (let i = 0; i < y.length; i++) pow[i] += y[i] * y[i];
+    }
+    return pow;
+  }
+
+  /** Find one note's onset inside [a, b] seconds of an envelope. */
+  function findOnset(env, a, b, limit, o) {
+    const n = env.db.length;
+    if (!n) return null;
+    const fr = t => Math.min(n - 1, Math.max(0, Math.round((t - env.t0) / env.hop)));
+    const ka = fr(a), kb = fr(b);
+    if (kb <= ka) return null;
+    const d = Math.max(1, Math.round(0.005 / env.hop));
+    const e = env.db;
+    let ks = -1, best = -Infinity;
+    for (let k = ka; k <= kb; k++) {
+      const r = e[Math.min(n - 1, k + d)] - e[Math.max(0, k - d)];
+      if (r > best) { best = r; ks = k; }
+    }
+    if (ks < 0) return null;
+    const kLim = Math.min(fr(limit), ks + Math.round(0.15 / env.hop));
+    let kp = ks, pv = e[ks];
+    for (let k = ks; k <= kLim; k++) {
+      if (e[k] > pv) { pv = e[k]; kp = k; } else if (e[k] < pv - 3) break;
+    }
+    const kb0 = Math.max(0, ks - Math.round(0.06 / env.hop));
+    let base = Infinity;
+    for (let k = kb0; k <= ks; k++) base = Math.min(base, e[k]);
+
+    // Whatever was sounding before (the last note's tail, reverb, noise) is projected forward
+    // as a steady decay and taken away, leaving this note's own sound.
+    const p0 = Math.max(0, ks - Math.round(0.06 / env.hop)), p1 = ks - Math.round(0.015 / env.hop);
+    let slope = 0, icept = base;
+    if (p1 - p0 >= 8) {
+      let sx = 0, sy = 0, sxx = 0, sxy = 0, m = 0;
+      for (let k = p0; k <= p1; k++) { sx += k; sy += e[k]; sxx += k * k; sxy += k * e[k]; m++; }
+      const den = m * sxx - sx * sx;
+      slope = den ? (m * sxy - sx * sy) / den : 0;
+      icept = (sy - slope * sx) / m;
+      if (slope > 0) { slope = 0; icept = sy / m; }
+    } else if (p1 >= p0) {
+      let sy = 0; for (let k = p0; k <= p1; k++) sy += e[k];
+      icept = sy / (p1 - p0 + 1);
+    }
+    const tail = k => Math.pow(10, (icept + slope * k) / 10);
+    const own = new Float64Array(Math.max(kp, kLim) - kb0 + 2);
+    let ownPeak = 0, kOwnPeak = kp;
+    for (let k = kb0; k <= Math.max(kp, kb0); k++) {
+      const v = Math.max(0, env.lin[k] - tail(k));
+      own[k - kb0] = v;
+      if (k >= ks && v > ownPeak) { ownPeak = v; kOwnPeak = k; }
+    }
+    if (ownPeak <= 0) return { onset: env.t0 + ks * env.hop, peakDb: pv, baseDb: base, riseDb: 0, maskDb: 0, slope: best, atEdge: true };
+    const ownPeakDb = 10 * Math.log10(ownPeak);
+    const rise = ownPeakDb - (icept + slope * ks);
+    const drop = o.alignTo === 'start' ? o.startDb : o.attackDb;
+    // never closer to what was already there than it can be told apart from it
+    const thrAt = k => Math.max(ownPeak * Math.pow(10, -drop / 10), 0.5 * tail(k));
+    let k = kOwnPeak;
+    while (k > kb0 && own[k - 1 - kb0] >= thrAt(k - 1)) k--;
+    let t = env.t0 + k * env.hop;
+    if (k > kb0) {
+      const a0 = own[k - 1 - kb0] - thrAt(k - 1), a1 = own[k - kb0] - thrAt(k);
+      if (a1 > a0) t = env.t0 + (k - 1 + (-a0) / (a1 - a0)) * env.hop;
+    }
+    const maskDb = 10 * Math.log10(tail(Math.max(kb0, Math.round((t - env.t0) / env.hop))) / ownPeak);
+    return { onset: t, peakDb: ownPeakDb, baseDb: base, riseDb: Math.max(rise, ownPeakDb - base), maskDb, slope: best, peakTime: env.t0 + kOwnPeak * env.hop, atEdge: ks === ka || ks === kb };
+  }
+
+  /** Loudest 50 ms of [t0, t1], in dB. */
+  function loudness(env, t0, t1) {
+    const n = env.lin.length;
+    const k0 = Math.max(0, Math.round((t0 - env.t0) / env.hop));
+    const k1 = Math.min(n, Math.round((t1 - env.t0) / env.hop));
+    if (k1 - k0 < 1) return -Infinity;
+    const L = Math.min(k1 - k0, Math.max(1, Math.round(0.05 / env.hop)));
+    let sum = 0;
+    for (let k = k0; k < k0 + L; k++) sum += env.lin[k];
+    let best = sum;
+    for (let k = k0 + L; k < k1; k++) { sum += env.lin[k] - env.lin[k - L]; if (sum > best) best = sum; }
+    return 10 * Math.log10(best / L + 1e-12);
+  }
+
+  function ccValueAt(midi, track, ch, cc, tick) {
+    let v = null, t = -1;
+    for (const e of midi.tracks[track].events) {
+      if (e.kind === 'ch' && (e.status & 0xf0) === 0xb0 && (e.status & 0x0f) === ch && e.d1 === cc && e.tick <= tick && e.tick >= t) { v = e.d2; t = e.tick; }
+    }
+    return v;
+  }
+
+  function analyse(midi, audio, options) {
+    const o = Object.assign({}, ANALYSE_DEFAULTS, options || {});
+    const tm = tempoMap(midi, o.tempoBpm);
+    const ts = timeSignature(midi);
+    const fs = audio.sampleRate, x = audio.data;
+    const off = o.audioOffsetMs / 1000;
+    const maxDelay = o.maxDelayMs / 1000, spread = o.spreadMs / 1000;
+    const all = collectNotes(midi).filter(n => o.track < 0 || n.track === o.track).map(n => Object.assign(n, {
+      t: tm.toSec(n.startTick) + off,
+      tEnd: tm.toSec(n.endTick) + off,
+      keyswitch: n.pitch <= o.keyswitchMax,
+    }));
+    const notes = all.filter(n => !n.keyswitch);
+    const warnings = [];
+    if (!notes.length) throw new Error('The MIDI file has no notes to measure.');
+    const duration = x.length / fs;
+    if (notes[notes.length - 1].t > duration) warnings.push('The audio is shorter than the MIDI part: notes after ' + duration.toFixed(1) + ' s were not measured. Render the whole part.');
+
+    // Notes that sound together with another note are measured on their own harmonics.
+    const byStart = notes.slice().sort((a, b) => a.t - b.t);
+    for (const n of notes) n.overlapped = false;
+    for (let i = 0; i < byStart.length; i++) {
+      const a = byStart[i];
+      for (let j = i + 1; j < byStart.length; j++) {
+        const b = byStart[j];
+        if (b.t - a.t >= 0.03 && b.t >= a.tEnd - 0.005) break;
+        if (b.t - a.t < 0.03 || b.t < a.tEnd - 0.005) { a.overlapped = true; b.overlapped = true; }
+      }
+    }
+    const polyphonic = notes.some(n => n.overlapped);
+
+    const kw = kWeight(x, fs);
+    const benv = envelope(kw, fs, 0.0005, 0.003);
+
+    // The part's typical delay: the lag at which the note starts best line up with rises in the sound.
+    const d = Math.round(0.005 / benv.hop);
+    const nE = benv.db.length;
+    const rise = new Float32Array(nE);
+    for (let k = 0; k < nE; k++) rise[k] = Math.max(0, benv.db[Math.min(nE - 1, k + d)] - benv.db[Math.max(0, k - d)]);
+    let typical = 0, bestScore = -1;
+    for (let L = -0.02; L <= maxDelay; L += benv.hop) {
+      let s = 0;
+      for (const n of notes) {
+        const k = Math.round((n.t + L - benv.t0) / benv.hop);
+        if (k >= 1 && k < nE - 1) s += Math.max(rise[k - 1], rise[k], rise[k + 1]);
+      }
+      if (s > bestScore) { bestScore = s; typical = L; }
+    }
+
+    // A note's own harmonics, band-passed out of the mix: other pitches and the last note's tail mostly fall away.
+    const harm = new Map();
+    // `apart`: keep out the harmonics of notes sounding with it (chords, held notes, the last note's tail).
+    const harmonicEnv = (n, apart) => {
+      const key = n.index + (apart ? ':apart' : '');
+      if (harm.has(key)) return harm.get(key);
+      const f0 = 440 * Math.pow(2, (n.pitch - 69) / 12);
+      const s0 = Math.max(0, Math.floor((n.window[0] - 0.12) * fs));
+      const s1 = Math.min(x.length, Math.ceil((Math.max(n.limit, n.window[1]) + 0.45) * fs) + 1);
+      const pad = Math.round(0.1 * fs);
+      const base = Math.max(0, s0 - pad);
+      const others = apart ? notes.filter(m => m !== n && m.pitch !== n.pitch && m.t < n.window[1] && m.tEnd + 0.4 > n.window[0])
+        .map(m => 440 * Math.pow(2, (m.pitch - 69) / 12)) : [];
+      const pow = harmonicPower(x, fs, base, s1 + pad, f0, others);
+      const env = envelope(pow, fs, 0.0005, Math.max(0.003, 0.5 / f0), s0 - base, Math.min(pow.length, s1 - base), true);
+      env.t0 += base / fs;
+      harm.set(key, env);
+      return env;
+    };
+    const ok = r => r && r.riseDb >= o.minRiseDb && r.slope >= 1;
+
+    // Notes starting within 30 ms of each other are a chord: heard as one attack, so measured on the
+    // whole sound and moved together. A note entering under held notes is measured apart from them.
+    let chordId = 0;
+    for (let i = 0; i < byStart.length;) {
+      let j = i + 1;
+      while (j < byStart.length && byStart[j].t - byStart[i].t < 0.03) j++;
+      for (let k = i; k < j; k++) byStart[k].chord = j - i > 1 ? chordId : -1;
+      chordId++;
+      i = j;
+    }
+    for (const n of notes) n.under = n.overlapped && n.chord < 0;
+
+    for (const n of notes) {
+      // Neighbours bound the search: every other note for the whole sound, the same key for a note under held notes.
+      const pool = notes.filter(m => m !== n && (n.chord < 0 || m.chord !== n.chord) && (!n.under || m.pitch === n.pitch));
+      let prev = null, next = null;
+      for (const m of pool) {
+        if (m.t <= n.t && (!prev || m.t > prev.t)) prev = m;
+        if (m.t > n.t && (!next || m.t < next.t)) next = m;
+      }
+      if (prev && n.t - prev.t < 0.03) prev = null;
+      let a = Math.max(n.t + typical - spread, n.t + Math.min(0, typical) - 0.01);
+      let b = Math.min(n.t + typical + spread, n.t + maxDelay);
+      if (prev) a = Math.max(a, (prev.t + n.t) / 2 + typical);
+      if (next) b = Math.min(b, (n.t + next.t) / 2 + typical);
+      n.limit = next ? next.t + typical - 0.005 : n.t + maxDelay + 0.3;
+      n.window = [a, b];
+      n.next = next;
+    }
+
+    const chordResult = new Map();
+    const measure = (n, method) => {
+      const [a, b] = n.window;
+      if (n.t >= duration || b - a < 0.004) return { r: null, on: 'whole sound' };
+      if (n.chord >= 0) {
+        if (!chordResult.has(n.chord)) chordResult.set(n.chord, findOnset(benv, a, b, n.limit, o));
+        return { r: chordResult.get(n.chord), on: 'chord' };
+      }
+      if (method === 'whole') return { r: findOnset(benv, a, b, n.limit, o), on: 'whole sound' };
+      // Each note on its own harmonics: the last note's tail and other pitches mostly fall away.
+      return { r: findOnset(harmonicEnv(n, n.under), a, b, n.limit, o), on: 'harmonics' };
+    };
+    const keep = (n, m) => {
+      n.measuredOn = m.on;
+      n.found = ok(m.r);
+      if (!n.found) return;
+      n.onset = m.r.onset;
+      n.delay = m.r.onset - n.t;
+      n.riseDb = m.r.riseDb;
+      n.atEdge = m.r.atEdge;
+      if (m.on === 'harmonics') {
+        // how much of the sound at its peak is in the note's harmonics
+        const k = Math.min(benv.db.length - 1, Math.max(0, Math.round((m.r.peakTime - benv.t0) / benv.hop)));
+        n.harmonicShareDb = m.r.peakDb - benv.db[k];
+      }
+    };
+    const first = o.method === 'whole' ? 'whole' : 'harmonics';
+    for (const n of notes) keep(n, measure(n, first));
+    if (o.method === 'auto') {
+      // Mostly not found on harmonics: an unpitched sound, or pitches the MIDI doesn't match. Use the whole sound.
+      const single = notes.filter(n => n.chord < 0);
+      const onHarm = single.filter(n => n.found).length;
+      const share = median(single.filter(n => n.found).map(n => n.harmonicShareDb));
+      if (single.length && (onHarm < single.length / 2 || share < -12)) {
+        const tries = single.map(n => measure(n, 'whole'));
+        if (share < -12 || tries.filter(m => ok(m.r)).length > onHarm) single.forEach((n, i) => keep(n, tries[i]));
+      }
+    }
+
+    // Loudness: from the note's own onset to its end, the next note's onset, or 400 ms, whichever is first.
+    // Every note is measured the same way: on its harmonics unless everything was measured on the whole sound.
+    const metric = notes.every(n => !n.found || n.measuredOn === 'whole sound') ? 'whole sound' : 'harmonics';
+    for (const n of notes) {
+      if (!n.found) continue;
+      let end = n.onset + Math.min(0.4, Math.max(0.05, n.tEnd - n.t));
+      if (n.next && n.next.found) end = Math.min(end, n.next.onset);
+      else if (n.next) end = Math.min(end, n.next.t + typical);
+      end = Math.max(end, n.onset + 0.01);
+      n.loudDb = loudness(metric === 'harmonics' ? harmonicEnv(n, false) : benv, n.onset, end);
+    }
+    harm.clear();
+
+    // Worth a look: under held notes, at the edge of where it could be, or far from other notes on the same key.
+    for (const n of notes) {
+      if (!n.found) continue;
+      const same = notes.filter(m => m.found && m.pitch === n.pitch && m !== n).map(m => m.delay);
+      const far = same.length >= 2 && Math.abs(n.delay - median(same)) > 0.015;
+      n.check = !!(n.under || n.atEdge || far);
+    }
+
+    // What each note's loudness should be, given its velocity, its pitch and the dynamics CCs.
+    const found = notes.filter(n => n.found && isFinite(n.loudDb));
+    for (const n of found) {
+      n.cc1 = ccValueAt(midi, n.track, n.ch, 1, n.startTick);
+      n.cc11 = ccValueAt(midi, n.track, n.ch, 11, n.startTick);
+    }
+    const model = { terms: [], dbPerVelocity: null, fitted: false };
+    if (found.length >= 6) {
+      const vary = f => { const v = found.map(f).filter(z => z !== null); return v.length === found.length && stdev(v) > 2; };
+      const pitches = found.map(n => n.pitch);
+      const span = Math.max.apply(null, pitches) - Math.min.apply(null, pitches);
+      const terms = [{ name: 'level', f: () => 1 }];
+      if (vary(n => n.vel)) terms.push({ name: 'velocity', f: n => n.vel });
+      if (vary(n => n.cc1)) terms.push({ name: 'CC1', f: n => n.cc1 });
+      if (vary(n => n.cc11)) terms.push({ name: 'CC11', f: n => n.cc11 });
+      if (span >= 3) terms.push({ name: 'pitch', f: n => (n.pitch - 60) / 12 });
+      if (span >= 12 && found.length >= 12) terms.push({ name: 'pitch²', f: n => Math.pow((n.pitch - 60) / 12, 2) });
+      const X = found.map(n => terms.map(t => t.f(n)));
+      const fit = robustFit(X, found.map(n => n.loudDb));
+      if (fit.beta) {
+        model.fitted = true;
+        model.terms = terms.map((t, i) => ({ name: t.name, coef: fit.beta[i] }));
+        model.scaleDb = fit.scale;
+        const vi = terms.findIndex(t => t.name === 'velocity');
+        if (vi >= 0 && fit.beta[vi] >= 0.05 && fit.beta[vi] <= 1.5) model.dbPerVelocity = fit.beta[vi];
+        found.forEach((n, i) => {
+          n.expectedDb = X[i].reduce((s, xv, a) => s + xv * fit.beta[a], 0);
+          n.deviationDb = n.loudDb - n.expectedDb;
+        });
+      }
+    } else {
+      warnings.push('Fewer than six notes were found, too few to judge which are too loud or too quiet.');
+    }
+
+    const delays = found.map(n => n.delay);
+    const notFound = notes.filter(n => !n.found).length;
+    if (notFound) warnings.push(notFound + (notFound === 1 ? ' note was' : ' notes were') + " not found in the audio and won't be changed.");
+    // Sound well before the first note means the audio and the MIDI don't start together.
+    let loudest = -Infinity;
+    for (let k = 0; k < benv.db.length; k++) loudest = Math.max(loudest, benv.db[k]);
+    let firstSound = -1;
+    for (let k = 0; k < benv.db.length; k++) if (benv.db[k] > loudest - 30) { firstSound = benv.t0 + k * benv.hop; break; }
+    const firstNote = Math.min.apply(null, notes.map(n => n.t));
+    if (firstSound >= 0 && firstSound < firstNote - 0.02) {
+      warnings.unshift('There is sound ' + Math.round((firstNote - firstSound) * 1000) + ' ms before the first note, so the audio probably starts earlier than the MIDI. ' +
+        'Render from the start of the clip, or set Audio starts late by to a negative number.');
+    } else if (delays.length && quantile(delays, 0.5) < -0.002) {
+      warnings.unshift('Most notes sound before their MIDI note. Check that the audio and the MIDI start at the same moment.');
+    }
+
+    return {
+      version: VERSION,
+      options: o,
+      midi, tempo: tm, timeSig: ts,
+      notes: all,
+      measured: notes,
+      typicalDelay: typical,
+      polyphonic, metric,
+      chords: chordId > 0 ? new Set(notes.filter(n => n.chord >= 0).map(n => n.chord)).size : 0,
+      model,
+      warnings,
+      sampleRate: fs,
+      duration,
+      envelope: benv,
+      stats: {
+        notes: notes.length,
+        found: found.length,
+        medianMs: median(delays) * 1000,
+        minMs: Math.min.apply(null, delays.concat([Infinity])) * 1000,
+        maxMs: Math.max.apply(null, delays.concat([-Infinity])) * 1000,
+        spreadMs: (quantile(delays, 0.95) - quantile(delays, 0.05)) * 1000,
+        sdMs: stdev(delays) * 1000,
+        loudSdDb: stdev(found.filter(n => isFinite(n.deviationDb)).map(n => n.deviationDb)),
+      },
+    };
+  }
+
+  // ------------------------------------------------------------ correction
+
+  const PLAN_DEFAULTS = {
+    timingMode: 'note',     // 'note' | 'pitch' | 'part' | 'off'
+    timingStrength: 1,
+    targetMs: 0,            // where the sound should land relative to the written note
+    moveEnds: true,         // move note ends by the same amount (keeps lengths)
+    volumeMode: 'note',     // 'note' | 'pitch' | 'off'
+    volumeStrength: 1,
+    toleranceDb: 1,         // leave notes within this many dB of expected alone
+    volumeTarget: 'velocity', // 'velocity' | 'cc11'
+    dbPerVelocity: null,    // null: use the fitted value, or 0.25 if none
+    dbPerCC: 0.3,
+    cc11Base: 100,
+    controlLookbackBeats: 0.25, // keyswitches up to this far before a note move with it
+  };
+
+  function plan(result, options) {
+    const o = Object.assign({}, PLAN_DEFAULTS, options || {});
+    const { midi, tempo: tm } = result;
+    const notes = result.measured;
+    const found = notes.filter(n => n.found);
+    const dbPerVel = o.dbPerVelocity || result.model.dbPerVelocity || 0.25;
+
+    const groupMedian = (n, key, sel) => {
+      const g = found.filter(m => sel(m) && isFinite(m[key]));
+      return g.length ? median(g.map(m => m[key])) : n[key];
+    };
+    const partDelay = median(found.map(m => m.delay));
+
+    const changes = [];
+    for (const n of notes) {
+      const c = { note: n, newStartTick: n.startTick, newEndTick: n.endTick, newVel: n.vel, shiftMs: 0, velChange: 0, cc11: null };
+      changes.push(c);
+      if (!n.found) continue;
+      // Volume first: a new velocity can pick a different sample, and a profile knows that sample's delay.
+      if (o.volumeMode !== 'off' && isFinite(n.deviationDb)) {
+        let dev = n.deviationDb;
+        if (o.volumeMode === 'pitch') dev = groupMedian(n, 'deviationDb', m => m.pitch === n.pitch);
+        c.deviationUsed = dev;
+        if (Math.abs(dev) >= o.toleranceDb) {
+          if (o.volumeTarget === 'cc11' && !n.overlapped) {
+            c.cc11 = Math.max(0, Math.min(127, Math.round(o.cc11Base - dev * o.volumeStrength / o.dbPerCC)));
+          } else {
+            c.newVel = Math.max(1, Math.min(127, Math.round(n.vel - dev * o.volumeStrength / dbPerVel)));
+            c.velChange = c.newVel - n.vel;
+          }
+        }
+        if (o.volumeTarget === 'cc11' && !n.overlapped && c.cc11 === null) c.cc11 = o.cc11Base;
+        const fix = c.cc11 !== null ? (c.cc11 - o.cc11Base) * o.dbPerCC : c.velChange * dbPerVel;
+        c.predictedDeviationDb = n.deviationDb + fix;
+      }
+      // Timing
+      let delay = n.delayAt ? n.delayAt(c.newVel) : n.delay;
+      if (o.timingMode === 'pitch') {
+        delay = groupMedian(n, 'delay', m => m.pitch === n.pitch && Math.abs(m.vel - n.vel) <= 16);
+      } else if (o.timingMode === 'part') delay = partDelay;
+      if (o.timingMode !== 'off') {
+        const shift = -(delay - o.targetMs / 1000) * o.timingStrength;
+        if (Math.abs(shift) >= 0.0005) {
+          const s = tm.toSec(n.startTick) + shift;
+          c.newStartTick = Math.round(tm.toTick(s));
+          if (o.moveEnds) c.newEndTick = Math.round(tm.toTick(tm.toSec(n.endTick) + shift));
+          if (c.newEndTick <= c.newStartTick) c.newEndTick = c.newStartTick + 1;
+          c.shiftMs = (tm.toSec(c.newStartTick) - tm.toSec(n.startTick)) * 1000;
+        }
+      }
+      c.predictedDelayMs = delay * 1000 + c.shiftMs;
+    }
+
+    // A note moved under the end of the same key's previous note would be cut off: end the earlier note there.
+    const lanes = new Map();
+    for (const c of changes) {
+      const k = c.note.track + ':' + c.note.ch + ':' + c.note.pitch;
+      if (!lanes.has(k)) lanes.set(k, []);
+      lanes.get(k).push(c);
+    }
+    for (const lane of lanes.values()) {
+      lane.sort((a, b) => a.newStartTick - b.newStartTick);
+      for (let i = 0; i + 1 < lane.length; i++) {
+        if (lane[i].newEndTick > lane[i + 1].newStartTick) {
+          lane[i].newEndTick = Math.max(lane[i].newStartTick + 1, lane[i + 1].newStartTick);
+          lane[i].trimmed = true;
+        }
+      }
+    }
+
+    // Keyswitches and articulation messages travel with the notes they introduce.
+    const moves = new Map(); // event order -> new tick
+    const groups = new Map(); // track:ch:tick -> earliest shift (ticks, <= 0)
+    for (const c of changes) {
+      const k = c.note.track + ':' + c.note.ch + ':' + c.note.startTick;
+      const dt = c.newStartTick - c.note.startTick;
+      groups.set(k, Math.min(groups.has(k) ? groups.get(k) : 0, dt));
+    }
+    const lookback = Math.round(o.controlLookbackBeats * midi.division);
+    const ksMax = result.options.keyswitchMax;
+    const ksNotes = result.notes.filter(n => n.keyswitch);
+    const ksByOn = new Map(ksNotes.map(n => [n.on.order, n]));
+    let controlsMoved = 0;
+    midi.tracks.forEach((t, ti) => {
+      const starts = new Map(); // ch -> sorted list of group start ticks with shifts
+      for (const [k, dt] of groups) {
+        const [tr, ch, tick] = k.split(':').map(Number);
+        if (tr !== ti || dt >= 0) continue;
+        if (!starts.has(ch)) starts.set(ch, []);
+        starts.get(ch).push({ tick, dt });
+      }
+      for (const list of starts.values()) list.sort((a, b) => a.tick - b.tick);
+      for (const e of t.events) {
+        if (e.kind !== 'ch') continue;
+        const ch = e.status & 0x0f, hi = e.status & 0xf0;
+        const list = starts.get(ch);
+        if (!list) continue;
+        const ks = isNoteOn(e) && e.d1 <= ksMax ? ksByOn.get(e.order) : null;
+        const isControl = ks || hi === 0xc0 || hi === 0xb0;
+        if (!isControl) continue;
+        // the first moved group at or after this event
+        const g = list.find(s => s.tick >= e.tick);
+        if (!g) continue;
+        const reach = ks || hi === 0xc0 ? lookback : 0; // CCs only when they sit exactly on the note
+        if (g.tick - e.tick > reach) continue;
+        moves.set(e.order, e.tick + g.dt);
+        if (ks && ks.off) moves.set(ks.off.order, ks.off.tick + g.dt);
+        controlsMoved++;
+      }
+    });
+
+    // Anything earlier than the start of the file: the whole part moves later by whole bars.
+    let minTick = 0;
+    for (const c of changes) minTick = Math.min(minTick, c.newStartTick);
+    for (const tk of moves.values()) minTick = Math.min(minTick, tk);
+    const barsAdded = minTick < 0 ? Math.ceil(-minTick / result.timeSig.barTicks) : 0;
+
+    const timed = changes.filter(c => c.note.found);
+    const before = timed.map(c => c.note.delay * 1000);
+    const after = timed.map(c => c.predictedDelayMs);
+    const devBefore = timed.filter(c => isFinite(c.note.deviationDb)).map(c => c.note.deviationDb);
+    const devAfter = timed.filter(c => isFinite(c.predictedDeviationDb)).map(c => c.predictedDeviationDb);
+    return {
+      options: o, result, changes, moves, barsAdded, controlsMoved,
+      dbPerVelocity: dbPerVel,
+      summary: {
+        moved: changes.filter(c => c.shiftMs !== 0).length,
+        velocityChanged: changes.filter(c => c.velChange !== 0).length,
+        cc11Written: changes.filter(c => c.cc11 !== null).length,
+        timingSpreadBeforeMs: before.length ? quantile(before, 0.95) - quantile(before, 0.05) : 0,
+        timingSpreadAfterMs: after.length ? quantile(after, 0.95) - quantile(after, 0.05) : 0,
+        timingOffBeforeMs: before.length ? median(before.map(Math.abs)) : 0,
+        timingOffAfterMs: after.length ? median(after.map(v => Math.abs(v - o.targetMs))) : 0,
+        loudSdBeforeDb: stdev(devBefore),
+        loudSdAfterDb: stdev(devAfter),
+      },
+    };
+  }
+
+  /** Write the plan into a copy of the MIDI file. */
+  function applyPlan(p) {
+    const midi = p.result.midi;
+    const byOrder = new Map();
+    for (const c of p.changes) {
+      byOrder.set(c.note.on.order, { tick: c.newStartTick, vel: c.newVel });
+      if (c.note.off) byOrder.set(c.note.off.order, { tick: c.newEndTick });
+    }
+    for (const [ord, tk] of p.moves) if (!byOrder.has(ord)) byOrder.set(ord, { tick: tk });
+    const shift = p.barsAdded * p.result.timeSig.barTicks;
+    const keepAtZero = e => e.kind === 'meta' && e.tick === 0 && [0x51, 0x58, 0x59, 0x03, 0x02, 0x01, 0x00, 0x04, 0x21, 0x20].includes(e.type);
+    const tracks = midi.tracks.map((t, ti) => {
+      const events = [];
+      for (const e of t.events) {
+        const ne = Object.assign({}, e);
+        const m = byOrder.get(e.order);
+        if (m) {
+          ne.tick = m.tick;
+          if (m.vel !== undefined && isNoteOn(e)) ne.d2 = m.vel;
+        }
+        if (!keepAtZero(e) && !isEOT(e)) ne.tick += shift;
+        if (isEOT(e)) ne.tick += shift;
+        events.push(ne);
+      }
+      for (const c of p.changes) {
+        if (c.cc11 === null || c.note.track !== ti) continue;
+        events.push({ tick: c.newStartTick + shift, kind: 'ch', status: 0xb0 | c.note.ch, d1: 11, d2: c.cc11, order: c.note.on.order - 0.5 });
+      }
+      return { events };
+    });
+    return writeMidi({ format: midi.format, division: midi.division, tracks });
+  }
+
+  // --------------------------------------------------------------- profiles
+
+  /**
+   * A learned profile: from the render of calibrationMidi(), every key at every velocity measured
+   * on its own. Saved as JSON; used to fix any part played on the same patch without rendering it.
+   */
+  function learnProfile(result, name) {
+    const groups = new Map();
+    for (const n of result.measured) {
+      if (!n.found) continue;
+      const k = n.pitch + ':' + n.vel;
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(n);
+    }
+    const entries = [];
+    for (const g of groups.values()) {
+      entries.push({
+        pitch: g[0].pitch, vel: g[0].vel,
+        delayMs: +(median(g.map(n => n.delay)) * 1000).toFixed(2),
+        loudDb: +median(g.map(n => n.loudDb)).toFixed(2),
+        deviationDb: isFinite(median(g.map(n => n.deviationDb))) ? +median(g.map(n => n.deviationDb)).toFixed(2) : 0,
+        spreadMs: +((Math.max.apply(null, g.map(n => n.delay)) - Math.min.apply(null, g.map(n => n.delay))) * 1000).toFixed(2),
+        takes: g.length,
+      });
+    }
+    entries.sort((a, b) => a.pitch - b.pitch || a.vel - b.vel);
+    if (!entries.length) throw new Error('No notes were found in the test render.');
+    return {
+      kind: 'note-position-volume-fixer/profile', version: 1,
+      name: name || 'Untitled', created: new Date().toISOString(),
+      alignTo: result.options.alignTo,
+      dbPerVelocity: result.model.dbPerVelocity,
+      notFound: result.measured.filter(n => !n.found).map(n => ({ pitch: n.pitch, vel: n.vel })),
+      entries,
+    };
+  }
+
+  function checkProfile(p) {
+    if (!p || p.kind !== 'note-position-volume-fixer/profile' || !Array.isArray(p.entries) || !p.entries.length) {
+      throw new Error("This isn't a profile saved by Note Position & Volume Fixer.");
+    }
+    return p;
+  }
+
+  /** Delay and loudness deviation for any key and velocity, between the ones measured. */
+  function profileAt(p, pitch, vel) {
+    const pitches = Array.from(new Set(p.entries.map(e => e.pitch))).sort((a, b) => a - b);
+    let lo = pitches[0], hi = pitches[pitches.length - 1];
+    const outside = pitch < lo || pitch > hi;
+    for (const q of pitches) { if (q <= pitch) lo = q; }
+    for (let i = pitches.length - 1; i >= 0; i--) { if (pitches[i] >= pitch) hi = pitches[i]; }
+    if (pitch < pitches[0]) hi = lo = pitches[0];
+    if (pitch > pitches[pitches.length - 1]) hi = lo = pitches[pitches.length - 1];
+    const atKey = (q) => {
+      const row = p.entries.filter(e => e.pitch === q).sort((a, b) => a.vel - b.vel);
+      let a = row[0], b = row[row.length - 1];
+      for (const e of row) { if (e.vel <= vel) a = e; }
+      for (let i = row.length - 1; i >= 0; i--) { if (row[i].vel >= vel) b = row[i]; }
+      if (vel < row[0].vel) b = a = row[0];
+      if (vel > row[row.length - 1].vel) a = b = row[row.length - 1];
+      const f = b.vel === a.vel ? 0 : (vel - a.vel) / (b.vel - a.vel);
+      return { delayMs: a.delayMs + f * (b.delayMs - a.delayMs), deviationDb: a.deviationDb + f * (b.deviationDb - a.deviationDb) };
+    };
+    const A = atKey(lo), B = atKey(hi);
+    const f = hi === lo ? 0 : (pitch - lo) / (hi - lo);
+    return {
+      delayMs: A.delayMs + f * (B.delayMs - A.delayMs),
+      // a key's own fault is its own: between measured keys there is nothing to correct
+      deviationDb: lo === pitch ? A.deviationDb : (hi === pitch ? B.deviationDb : 0),
+      exact: lo === pitch || hi === pitch,
+      outside,
+    };
+  }
+
+  /** The same shape analyse() returns, filled in from a profile instead of a render. */
+  function fromProfile(midi, profile, options) {
+    checkProfile(profile);
+    const o = Object.assign({}, ANALYSE_DEFAULTS, options || {}, { audioOffsetMs: 0, alignTo: profile.alignTo });
+    const tm = tempoMap(midi, o.tempoBpm);
+    const all = collectNotes(midi).filter(n => o.track < 0 || n.track === o.track).map(n => Object.assign(n, {
+      t: tm.toSec(n.startTick), tEnd: tm.toSec(n.endTick), keyswitch: n.pitch <= o.keyswitchMax,
+    }));
+    const notes = all.filter(n => !n.keyswitch);
+    if (!notes.length) throw new Error('The MIDI file has no notes to fix.');
+    for (const n of notes) {
+      const at = profileAt(profile, n.pitch, n.vel);
+      n.found = true;
+      n.delay = at.delayMs / 1000;
+      n.deviationDb = at.deviationDb;
+      n.delayAt = v => profileAt(profile, n.pitch, v).delayMs / 1000;
+      n.measuredOn = 'profile';
+      n.check = at.outside;
+      n.overlapped = false;
+    }
+    // overlapping notes can't take CC11 one at a time
+    const byStart = notes.slice().sort((a, b) => a.t - b.t);
+    for (let i = 0; i < byStart.length; i++) {
+      for (let j = i + 1; j < byStart.length && byStart[j].t < byStart[i].tEnd - 0.005; j++) { byStart[i].overlapped = byStart[j].overlapped = true; }
+    }
+    const outside = notes.filter(n => n.check).length;
+    const warnings = outside ? [outside + (outside === 1 ? ' note is' : ' notes are') + " outside the profile's range and use its nearest key."] : [];
+    const delays = notes.map(n => n.delay);
+    return {
+      version: VERSION, options: o, midi, tempo: tm, timeSig: timeSignature(midi),
+      notes: all, measured: notes, typicalDelay: median(delays), polyphonic: false, metric: 'profile',
+      model: { fitted: false, terms: [], dbPerVelocity: profile.dbPerVelocity },
+      warnings, profile,
+      stats: {
+        notes: notes.length, found: notes.length,
+        medianMs: median(delays) * 1000,
+        minMs: Math.min.apply(null, delays) * 1000, maxMs: Math.max.apply(null, delays) * 1000,
+        spreadMs: (quantile(delays, 0.95) - quantile(delays, 0.05)) * 1000,
+        sdMs: stdev(delays) * 1000,
+        loudSdDb: stdev(notes.map(n => n.deviationDb)),
+      },
+    };
+  }
+
+  // ------------------------------------------------------- test helpers
+
+  /** Seconds a calibration part lasts. */
+  function calibrationLength(o) {
+    o = Object.assign({ low: 48, high: 72, step: 1, velocities: [40, 80, 120], repeats: 1, bpm: 120, noteBeats: 0.5, gapBeats: 1.5 }, o || {});
+    const keys = Math.floor((o.high - o.low) / o.step) + 1;
+    return (8 + keys * o.velocities.length * o.repeats * (o.noteBeats + o.gapBeats)) * 60 / o.bpm;
+  }
+
+  /** A calibration part: every pitch in a range at several velocities, each note on its own. */
+  function calibrationMidi(o) {
+    o = Object.assign({ low: 48, high: 72, step: 1, velocities: [40, 80, 120], repeats: 1, bpm: 120, noteBeats: 0.5, gapBeats: 1.5, ppq: 480, channel: 0, keyswitch: null }, o || {});
+    const events = [];
+    let order = 0;
+    const uspq = Math.round(60e6 / o.bpm);
+    events.push({ tick: 0, kind: 'meta', type: 0x51, data: new Uint8Array([(uspq >> 16) & 255, (uspq >> 8) & 255, uspq & 255]), order: order++ });
+    events.push({ tick: 0, kind: 'meta', type: 0x58, data: new Uint8Array([4, 2, 24, 8]), order: order++ });
+    events.push({ tick: 0, kind: 'meta', type: 0x03, data: new Uint8Array(Array.from('Test notes', ch => ch.charCodeAt(0))), order: order++ });
+    if (o.keyswitch !== null && o.keyswitch !== undefined) {
+      // the articulation, chosen during the empty first bar
+      events.push({ tick: o.ppq * 2, kind: 'ch', status: 0x90 | o.channel, d1: o.keyswitch, d2: 100, order: order++ });
+      events.push({ tick: o.ppq * 2 + o.ppq / 4, kind: 'ch', status: 0x80 | o.channel, d1: o.keyswitch, d2: 64, order: order++ });
+    }
+    let tick = o.ppq * 4; // one empty bar first
+    for (const v of o.velocities) {
+      for (let p = o.low; p <= o.high; p += o.step) {
+        for (let r = 0; r < o.repeats; r++) {
+          events.push({ tick, kind: 'ch', status: 0x90 | o.channel, d1: p, d2: v, order: order++ });
+          events.push({ tick: tick + Math.round(o.noteBeats * o.ppq), kind: 'ch', status: 0x80 | o.channel, d1: p, d2: 64, order: order++ });
+          tick += Math.round((o.noteBeats + o.gapBeats) * o.ppq);
+        }
+      }
+    }
+    events.push({ tick: tick + o.ppq * 4, kind: 'meta', type: 0x2f, data: new Uint8Array(0), order: order++ });
+    return writeMidi({ format: 0, division: o.ppq, tracks: [{ events }] });
+  }
+
+  function encodeWav(data, fs) {
+    const n = data.length;
+    const b = new Uint8Array(44 + n * 4);
+    const dv = new DataView(b.buffer);
+    const s = (p, t) => { for (let i = 0; i < 4; i++) b[p + i] = t.charCodeAt(i); };
+    s(0, 'RIFF'); dv.setUint32(4, 36 + n * 4, true); s(8, 'WAVE');
+    s(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 3, true); dv.setUint16(22, 1, true);
+    dv.setUint32(24, fs, true); dv.setUint32(28, fs * 4, true); dv.setUint16(32, 4, true); dv.setUint16(34, 32, true);
+    s(36, 'data'); dv.setUint32(40, n * 4, true);
+    for (let i = 0; i < n; i++) dv.setFloat32(44 + i * 4, data[i], true);
+    return b;
+  }
+
+  return {
+    VERSION,
+    parseMidi, writeMidi, collectNotes, noteTracks, tempoMap, timeSignature, noteName, position,
+    decodeAudio, kWeight, envelope,
+    analyse, plan, applyPlan,
+    learnProfile, checkProfile, profileAt, fromProfile,
+    calibrationMidi, calibrationLength, encodeWav,
+    ANALYSE_DEFAULTS, PLAN_DEFAULTS,
+    _internal: { median, quantile, stdev, robustFit, findOnset, harmonicPower, loudness },
+  };
+});
+
+</script>
+<script>
+/*
+ * The page: files in, settings, results drawn, fixed MIDI out.
+ * All measuring is the engine's (NPVF); this file only wires it to the window.
+ */
+(function () {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const C = {
+    roll: '#111419', rule: '#3A404A', thumb: '#6D7581', control: '#A9AFBA', text: '#DDE1E7',
+    dim: '#B0B6C0', focus: '#F2F4F7', accent: '#FFF200', warn: '#D2483F',
+  };
+  const state = {
+    source: 'render', midi: null, midiName: '', track: -1, audio: null, audioName: '', lossy: false,
+    profiles: [], profile: null, result: null, plan: null, selected: -1,
+    calAudio: null, calName: '', calParams: null,
+  };
+
+  // ---------------------------------------------------------------- helpers
+
+  const fmt = (v, d) => (isFinite(v) ? v.toFixed(d === undefined ? 1 : d) : '–');
+  const signed = (v, d) => {
+    if (!isFinite(v)) return '–';
+    const t = Math.abs(v).toFixed(d === undefined ? 1 : d);
+    return (+t === 0 ? '' : v > 0 ? '+' : '−') + t;
+  };
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const radio = name => document.querySelector('input[name="' + name + '"]:checked').value;
+  const num = (id, dflt) => { const v = parseFloat($(id).value); return isFinite(v) ? v : dflt; };
+  const later = () => new Promise(r => setTimeout(r, 30));
+  const baseName = n => n.replace(/\.[^.]+$/, '');
+
+  function parseNote(s) {
+    const m = /^\s*([A-Ga-g])\s*([#b♯♭]?)\s*(-?\d+)\s*$/.exec(s || '');
+    if (!m) return null;
+    const base = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 }[m[1].toLowerCase()];
+    const acc = (m[2] === '#' || m[2] === '♯') ? 1 : (m[2] === 'b' || m[2] === '♭') ? -1 : 0;
+    const p = base + acc + (parseInt(m[3], 10) + 2) * 12;
+    return p >= 0 && p <= 127 ? p : null;
+  }
+
+  function download(bytes, name, type) {
+    const url = URL.createObjectURL(new Blob([bytes], { type }));
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+
+  function status(text) { $('status').textContent = text; }
+  function messages(list) {
+    $('messages').innerHTML = list.map(m => '<p class="' + (m.info ? 'note-box' : 'msg') + '">' + esc(m.text || m) + '</p>').join('');
+  }
+
+  // --------------------------------------------------------------- storage
+
+  function loadProfiles() {
+    try { const v = JSON.parse(localStorage.getItem('npvf.profiles') || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; }
+  }
+  function storeProfiles() {
+    try { localStorage.setItem('npvf.profiles', JSON.stringify(state.profiles)); return true; } catch (e) { return false; }
+  }
+  function addProfile(p) {
+    const i = state.profiles.findIndex(q => q.name === p.name);
+    if (i >= 0) state.profiles[i] = p; else state.profiles.push(p);
+    state.profiles.sort((a, b) => a.name.localeCompare(b.name));
+    const saved = storeProfiles();
+    state.profile = p;
+    fillProfiles();
+    if (!saved) $('profile-error').textContent = "This browser won't keep profiles between visits. Use Save Profile File… to keep it.";
+  }
+  function fillProfiles() {
+    const sel = $('profile-select');
+    sel.innerHTML = state.profiles.length
+      ? state.profiles.map((p, i) => '<option value="' + i + '"' + (p === state.profile ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('')
+      : '<option value="">None saved yet</option>';
+    if (!state.profile && state.profiles.length) state.profile = state.profiles[0];
+    const p = state.profile;
+    $('profile-save').disabled = $('profile-delete').disabled = !p;
+    if (p) {
+      const keys = new Set(p.entries.map(e => e.pitch));
+      const lo = Math.min.apply(null, Array.from(keys)), hi = Math.max.apply(null, Array.from(keys));
+      const d = p.entries.map(e => e.delayMs);
+      $('profile-info').textContent = keys.size + ' keys from ' + NPVF.noteName(lo) + ' to ' + NPVF.noteName(hi) +
+        ', heard ' + fmt(Math.min.apply(null, d), 0) + ' to ' + fmt(Math.max.apply(null, d), 0) + ' ms late. Learned ' + new Date(p.created).toLocaleDateString() + '.';
+    } else {
+      $('profile-info').textContent = 'A profile is learned once per patch from a test render, then fixes any part played on that patch without rendering it.';
+    }
+  }
+
+  // ----------------------------------------------------------------- files
+
+  async function decodeAudioFile(buf, name) {
+    try { return { audio: NPVF.decodeAudio(new Uint8Array(buf)), lossy: false }; } catch (e) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) throw new Error("Couldn't read " + name + '. Use a WAV or AIFF file.');
+      const ctx = new Ctx();
+      try {
+        const ab = await ctx.decodeAudioData(buf.slice(0));
+        const n = ab.length, ch = ab.numberOfChannels, out = new Float32Array(n);
+        for (let c = 0; c < ch; c++) { const d = ab.getChannelData(c); for (let i = 0; i < n; i++) out[i] += d[i] / ch; }
+        return { audio: { sampleRate: ab.sampleRate, channels: ch, data: out }, lossy: /\.(mp3|m4a|aac|ogg)$/i.test(name) };
+      } catch (e2) {
+        throw new Error("Couldn't read " + name + '. Use a WAV or AIFF file.');
+      } finally { if (ctx.close) ctx.close(); }
+    }
+  }
+
+  async function takeMidi(file) {
+    $('midi-error').textContent = '';
+    try {
+      const midi = NPVF.parseMidi(new Uint8Array(await file.arrayBuffer()));
+      const tracks = NPVF.noteTracks(midi);
+      if (!tracks.length) throw new Error(file.name + ' has no notes in it.');
+      state.midi = midi; state.midiName = file.name;
+      state.track = tracks.length > 1 ? tracks[0].index : -1;
+      $('midi-name').textContent = file.name;
+      const tm = NPVF.tempoMap(midi);
+      const notes = NPVF.collectNotes(midi).length;
+      let info = notes + (notes === 1 ? ' note' : ' notes') + ', ' + fmt(tm.bpmAtStart, tm.bpmAtStart % 1 ? 2 : 0) + ' BPM' + (tm.segs.length > 1 ? ' at the start (tempo changes)' : '') + '.';
+      if (!tm.hasTempo) info += ' The file has no tempo, so 120 BPM is assumed.';
+      $('midi-info').textContent = info;
+      $('bpm').value = tm.segs.length > 1 ? '' : +tm.bpmAtStart.toFixed(2);
+      let pick = $('track-pick');
+      if (pick) pick.remove();
+      if (tracks.length > 1) {
+        pick = document.createElement('label');
+        pick.className = 'field'; pick.id = 'track-pick';
+        pick.innerHTML = '<span>The file has ' + tracks.length + ' tracks with notes. Fix</span><select id="track">' +
+          tracks.map(t => '<option value="' + t.index + '">' + esc(t.name || 'Track ' + (t.index + 1)) + ' (' + t.notes + ' notes)</option>').join('') + '</select>';
+        $('midi-info').after(pick);
+        $('track').addEventListener('change', e => { state.track = +e.target.value; schedule(); });
+      }
+      schedule();
+    } catch (e) {
+      $('midi-error').textContent = (e.message || String(e)) + ' Choose a Standard MIDI File (.mid).';
+    }
+  }
+
+  async function takeAudio(file) {
+    $('audio-error').textContent = '';
+    $('audio-name').textContent = file.name;
+    $('audio-info').textContent = 'Reading…';
+    try {
+      const { audio, lossy } = await decodeAudioFile(await file.arrayBuffer(), file.name);
+      state.audio = audio; state.audioName = file.name; state.lossy = lossy;
+      $('audio-info').textContent = fmt(audio.data.length / audio.sampleRate, 1) + ' seconds at ' + (audio.sampleRate / 1000) + ' kHz.';
+      schedule();
+    } catch (e) {
+      state.audio = null;
+      $('audio-info').textContent = '';
+      $('audio-error').textContent = e.message;
+    }
+  }
+
+  async function takeProfileFile(file) {
+    $('profile-error').textContent = '';
+    try {
+      const p = NPVF.checkProfile(JSON.parse(await file.text()));
+      addProfile(p);
+      schedule();
+    } catch (e) {
+      $('profile-error').textContent = (e instanceof SyntaxError ? file.name + " isn't a profile." : e.message) + ' Open a .json file saved from here.';
+    }
+  }
+
+  async function takeCalAudio(file) {
+    $('cal-error').textContent = '';
+    $('cal-name').textContent = file.name + ' (reading…)';
+    try {
+      const { audio } = await decodeAudioFile(await file.arrayBuffer(), file.name);
+      state.calAudio = audio; state.calName = file.name;
+      $('cal-name').textContent = file.name + ', ' + fmt(audio.data.length / audio.sampleRate, 0) + ' seconds';
+      if (!$('cal-title').value) $('cal-title').value = baseName(file.name);
+    } catch (e) {
+      state.calAudio = null;
+      $('cal-name').textContent = 'No test render yet';
+      $('cal-error').textContent = e.message;
+    }
+    $('cal-learn').disabled = !state.calAudio;
+  }
+
+  function wireDrop(zone, take, accept) {
+    const el = $(zone);
+    el.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); el.classList.add('over'); });
+    el.addEventListener('dragleave', () => el.classList.remove('over'));
+    el.addEventListener('drop', e => {
+      e.preventDefault(); e.stopPropagation(); el.classList.remove('over');
+      const f = Array.from(e.dataTransfer.files).find(accept) || e.dataTransfer.files[0];
+      if (f) take(f);
+    });
+  }
+  const isMidi = f => /\.midi?$/i.test(f.name);
+  const isJson = f => /\.json$/i.test(f.name);
+  const isAudio = f => !isMidi(f) && !isJson(f);
+
+  // ------------------------------------------------------------- measuring
+
+  function analyseOptions() {
+    const ks = parseNote($('ksmax').value);
+    return {
+      alignTo: $('align').value, maxDelayMs: num('maxdelay', 400), spreadMs: num('spread', 120),
+      audioOffsetMs: num('offset', 0), keyswitchMax: ks === null ? -1 : ks, method: $('method').value, track: state.track,
+      tempoBpm: tempoOverride(),
+    };
+  }
+  /** The tempo typed in, if it differs from the file's (a file with tempo changes keeps them unless one is typed). */
+  function tempoOverride() {
+    const v = parseFloat($('bpm').value);
+    if (!(v >= 20 && v <= 400) || !state.midi) return 0;
+    const tm = NPVF.tempoMap(state.midi);
+    return tm.segs.length === 1 && Math.abs(tm.bpmAtStart - v) < 0.005 ? 0 : v;
+  }
+
+  function planOptions() {
+    const dbv = parseFloat($('dbvel').value);
+    return {
+      timingMode: radio('timing'), timingStrength: num('strength', 100) / 100, targetMs: num('target', 0), moveEnds: $('moveends').checked,
+      volumeMode: radio('volume'), volumeTarget: radio('using'), toleranceDb: num('tolerance', 1),
+      dbPerVelocity: isFinite(dbv) && dbv > 0 ? dbv : null, cc11Base: num('cc11base', 100), dbPerCC: num('dbcc', 0.3),
+    };
+  }
+
+  let timer = 0, token = 0;
+  function schedule() { clearTimeout(timer); timer = setTimeout(measure, 120); }
+
+  async function measure() {
+    const my = ++token;
+    state.result = state.plan = null;
+    $('download').disabled = true;
+    $('download-note').textContent = '';
+    $('results').classList.add('hidden');
+    messages([]);
+    if (!state.midi) return status(state.source === 'render' ? 'Add a MIDI file and its render to begin.' : 'Add a MIDI file and choose a profile to begin.');
+    if (state.source === 'render' && !state.audio) return status('Now add the render of this part.');
+    if (state.source === 'profile' && !state.profile) return status('Now choose a profile, or learn one below.');
+    status(state.source === 'render' ? 'Measuring every note…' : 'Looking up every note…');
+    await later();
+    if (my !== token) return;
+    try {
+      const r = state.source === 'render'
+        ? NPVF.analyse(state.midi, state.audio, analyseOptions())
+        : NPVF.fromProfile(state.midi, state.profile, analyseOptions());
+      if (my !== token) return;
+      state.result = r;
+      state.selected = -1;
+      replan();
+    } catch (e) {
+      status('');
+      messages([e.message || String(e)]);
+    }
+  }
+
+  function replan() {
+    const r = state.result;
+    if (!r) return;
+    state.plan = NPVF.plan(r, planOptions());
+    const p = state.plan;
+    if (state.selected < 0 || state.selected >= p.changes.length) {
+      const first = p.changes.findIndex(c => c.note.found);
+      state.selected = first < 0 ? 0 : first;
+    }
+    const s = p.summary;
+    const parts = [];
+    if (s.moved) parts.push(s.moved + (s.moved === 1 ? ' note moves' : ' notes move'));
+    if (s.velocityChanged) parts.push(s.velocityChanged + (s.velocityChanged === 1 ? ' velocity changes' : ' velocities change'));
+    if (s.cc11Written) parts.push(s.cc11Written + ' CC11 values written');
+    status((r.profile ? 'Looked up ' : 'Measured ') + r.stats.found + ' of ' + r.stats.notes + ' notes. ' + (parts.length ? parts.join(', ') + '.' : 'Nothing needs changing.'));
+    const msgs = r.warnings.slice();
+    if (state.lossy) msgs.push('Compressed audio (MP3, AAC, Ogg) can start with a little added silence. Render a WAV or AIFF for exact timing.');
+    if (p.barsAdded) msgs.push({ info: true, text: 'Some notes now start before the clip did, so the fixed file begins ' + p.barsAdded + (p.barsAdded === 1 ? ' bar' : ' bars') + ' earlier. Place it ' + p.barsAdded + (p.barsAdded === 1 ? ' bar' : ' bars') + ' before where the original starts.' });
+    if (!r.profile && s.velocityChanged && radio('timing') !== 'off') msgs.push({ info: true, text: 'A new velocity can play a different sample with its own delay. Render the fixed part and check it here again; a second pass is usually smaller.' });
+    if (r.chords) msgs.push({ info: true, text: r.chords + (r.chords === 1 ? ' chord was' : ' chords were') + ' measured as one attack and moved together. A learned profile can also line up the notes inside a chord.' });
+    if (!r.profile && r.model && !r.model.fitted && radio('volume') !== 'off') msgs.push({ info: true, text: 'Volume is left alone: too few notes were found to judge.' });
+    messages(msgs);
+    $('download').disabled = false;
+    $('download-note').textContent = baseName(state.midiName) + ' (fixed).mid';
+    $('results').classList.remove('hidden');
+    drawAll();
+    fillTable();
+  }
+
+  // --------------------------------------------------------------- results
+
+  function tiles() {
+    const r = state.result, s = state.plan.summary;
+    const t = [];
+    t.push(['Notes found', r.stats.found + ' <span class="arrow">of</span> ' + r.stats.notes]);
+    t.push([r.profile ? 'Typical delay (profile)' : 'Typically heard late by', fmt(r.stats.medianMs, 0) + ' ms']);
+    t.push(['Spread between notes', fmt(s.timingSpreadBeforeMs, 0) + ' <span class="arrow">→</span> ' + fmt(s.timingSpreadAfterMs, 0) + ' ms']);
+    if (radio('volume') !== 'off' && isFinite(s.loudSdAfterDb) && (r.model.fitted || r.profile)) {
+      t.push(['Unintended loudness', fmt(s.loudSdBeforeDb, 1) + ' <span class="arrow">→</span> ' + fmt(s.loudSdAfterDb, 1) + ' dB']);
+    }
+    $('tiles').innerHTML = t.map(([k, v]) => '<div class="tile"><div class="dim">' + k + '</div><div class="big">' + v + '</div></div>').join('');
+  }
+
+  function prep(c) {
+    const dpr = window.devicePixelRatio || 1;
+    const w = c.clientWidth, h = c.clientHeight;
+    if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+    const ctx = c.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = C.roll; ctx.fillRect(0, 0, w, h);
+    ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
+    return { ctx, w, h };
+  }
+
+  function span() {
+    const r = state.result;
+    const notes = r.measured;
+    const t0 = Math.max(0, Math.min.apply(null, notes.map(n => n.t)) - 0.3);
+    let t1 = Math.max.apply(null, notes.map(n => (n.found ? Math.max(n.onset || n.t + n.delay, n.tEnd) : n.tEnd))) + 0.3;
+    if (r.duration) t1 = Math.min(t1, r.duration);
+    return [t0, Math.max(t1, t0 + 0.5)];
+  }
+
+  function drawLevel(ctx, env, x, t0, t1, top, bottom, w) {
+    if (!env) return;
+    let lo = -70, hi = -Infinity;
+    for (let k = 0; k < env.db.length; k++) hi = Math.max(hi, env.db[k]);
+    lo = Math.max(lo, hi - 60);
+    ctx.fillStyle = C.thumb;
+    ctx.beginPath();
+    ctx.moveTo(x(t0), bottom);
+    const step = Math.max(1, Math.floor((t1 - t0) / env.hop / w));
+    for (let px = 0; px <= w; px++) {
+      const ta = t0 + (t1 - t0) * px / w;
+      const ka = Math.max(0, Math.floor((ta - env.t0) / env.hop));
+      let m = -Infinity;
+      for (let k = ka; k < Math.min(env.db.length, ka + step); k++) m = Math.max(m, env.db[k]);
+      const v = isFinite(m) ? Math.max(0, (m - lo) / (hi - lo)) : 0;
+      ctx.lineTo(px, bottom - v * (bottom - top));
+    }
+    ctx.lineTo(w, bottom);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function drawOverview() {
+    const c = $('overview');
+    const { ctx, w, h } = prep(c);
+    const r = state.result, p = state.plan;
+    const [t0, t1] = span();
+    const x = t => (t - t0) / (t1 - t0) * w;
+    drawLevel(ctx, r.envelope, x, t0, t1, 34, h - 4, w);
+    p.changes.forEach((ch, i) => {
+      const n = ch.note;
+      const sel = i === state.selected;
+      ctx.fillStyle = sel ? C.accent : C.control;
+      ctx.fillRect(Math.round(x(n.t)) - (sel ? 1 : 0.5), 4, sel ? 3 : 1.5, 16);
+      if (!n.found) return;
+      const heard = n.onset !== undefined ? n.onset : n.t + n.delay;
+      ctx.strokeStyle = sel ? C.accent : C.control;
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x(n.t), 21); ctx.lineTo(x(heard), 29); ctx.stroke();
+      ctx.fillStyle = sel ? C.accent : C.focus;
+      ctx.fillRect(Math.round(x(heard)) - (sel ? 1 : 0.5), 29, sel ? 3 : 1.5, h - 33);
+    });
+    const n = p.changes[state.selected] && p.changes[state.selected].note;
+    c.setAttribute('aria-label', 'The whole part: ' + p.changes.length + ' notes from ' + fmt(t0, 1) + ' to ' + fmt(t1, 1) + ' seconds.' + (n ? ' Selected: ' + NPVF.noteName(n.pitch) + '.' : ''));
+  }
+
+  function drawDetail() {
+    const c = $('detail');
+    const { ctx, w, h } = prep(c);
+    const r = state.result, p = state.plan;
+    const ch = p.changes[state.selected];
+    if (!ch) return;
+    const n = ch.note;
+    const heard = n.found ? (n.onset !== undefined ? n.onset : n.t + n.delay) : NaN;
+    const t0 = n.t - 0.08;
+    const t1 = Math.max(isFinite(heard) ? heard : n.t + 0.2, n.t) + 0.3;
+    const x = t => (t - t0) / (t1 - t0) * w;
+    drawLevel(ctx, r.envelope, x, t0, t1, 28, h - 22, w);
+    // a ruler in ms from the written note
+    ctx.fillStyle = C.dim; ctx.strokeStyle = C.rule; ctx.lineWidth = 1;
+    const stepMs = (t1 - t0) > 0.6 ? 100 : 50;
+    for (let ms = Math.ceil((t0 - n.t) * 1000 / stepMs) * stepMs; ms <= (t1 - n.t) * 1000; ms += stepMs) {
+      const px = Math.round(x(n.t + ms / 1000)) + 0.5;
+      ctx.beginPath(); ctx.moveTo(px, h - 20); ctx.lineTo(px, h - 14); ctx.stroke();
+      ctx.fillText((ms > 0 ? '+' : '') + ms + ' ms', px + 3, h - 6);
+    }
+    // other notes nearby, faintly
+    for (const o of p.changes) {
+      if (o === ch || o.note.t < t0 || o.note.t > t1) continue;
+      ctx.fillStyle = C.rule; ctx.fillRect(Math.round(x(o.note.t)), 4, 1, h - 26);
+    }
+    const line = (t, colour, label, dash, row) => {
+      const px = Math.round(x(t)) + 0.5;
+      ctx.strokeStyle = colour; ctx.lineWidth = 2; ctx.setLineDash(dash || []);
+      ctx.beginPath(); ctx.moveTo(px, 4); ctx.lineTo(px, h - 22); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = colour;
+      const tw = ctx.measureText(label).width;
+      ctx.fillText(label, Math.max(4, px + 6 + tw > w ? px - 6 - tw : px + 6), 16 + row * 15);
+    };
+    line(n.t, C.control, 'Written', null, 0);
+    if (isFinite(heard)) line(heard, C.focus, (r.profile ? 'Expected ' : 'Heard ') + fmt(n.delay * 1000, 0) + ' ms late', null, 1);
+    if (ch.shiftMs) line(n.t + ch.shiftMs / 1000, C.control, 'Moves to ' + signed(ch.shiftMs, 0) + ' ms', [4, 3], 2);
+    c.setAttribute('aria-label', detailText());
+    $('detail-text').textContent = detailText();
+  }
+
+  function detailText() {
+    const ch = state.plan.changes[state.selected];
+    if (!ch) return '';
+    const n = ch.note, r = state.result;
+    let s = NPVF.noteName(n.pitch) + ' at ' + NPVF.position(n.startTick, r.midi, r.timeSig) + ', velocity ' + n.vel + ': ';
+    if (!n.found) return s + "not found in the audio, so it's left alone.";
+    s += (r.profile ? 'expected ' : 'heard ') + fmt(n.delay * 1000, 0) + ' ms after it was written';
+    if (isFinite(n.deviationDb)) s += ', ' + (Math.abs(n.deviationDb) < 0.5 ? 'as loud as expected' : fmt(Math.abs(n.deviationDb), 1) + ' dB ' + (n.deviationDb > 0 ? 'louder' : 'quieter') + ' than expected');
+    s += '. ';
+    const acts = [];
+    if (ch.shiftMs) acts.push('moves ' + fmt(Math.abs(ch.shiftMs), 0) + ' ms ' + (ch.shiftMs < 0 ? 'earlier' : 'later'));
+    if (ch.velChange) acts.push('velocity ' + n.vel + ' → ' + ch.newVel);
+    if (ch.cc11 !== null && ch.cc11 !== undefined) acts.push('CC11 ' + ch.cc11);
+    s += acts.length ? 'It ' + acts.join(', ') + '.' : 'It stays as it is.';
+    if (n.check) s += ' Worth a listen: ' + (n.under ? 'it was measured under other notes.' : n.atEdge ? 'it was found at the edge of where it could be.' : 'it differs from other notes on the same key.');
+    return s;
+  }
+
+  function fillTable() {
+    const r = state.result, p = state.plan;
+    const rows = p.changes.map((ch, i) => {
+      const n = ch.note;
+      const sel = i === state.selected;
+      const cells = [
+        i + 1, NPVF.noteName(n.pitch), NPVF.position(n.startTick, r.midi, r.timeSig), n.vel,
+        n.found ? fmt(n.delay * 1000, 1) : '<span class="none">not found</span>',
+        n.found && isFinite(n.deviationDb) ? signed(n.deviationDb, 1) : '–',
+        ch.shiftMs ? signed(ch.shiftMs, 1) : '–',
+        ch.velChange ? ch.newVel : (ch.cc11 !== null && ch.cc11 !== undefined ? 'CC11 ' + ch.cc11 : '–'),
+        esc(n.measuredOn || '–'),
+      ];
+      return '<tr data-i="' + i + '" tabindex="' + (sel ? 0 : -1) + '" aria-selected="' + sel + '">' + cells.map(v => '<td>' + v + '</td>').join('') +
+        '<td class="check">' + (n.check ? 'Check' : '') + '</td></tr>';
+    });
+    $('table').tBodies[0].innerHTML = rows.join('');
+    $('th-late').textContent = r.profile ? 'Expected late (ms)' : 'Heard late (ms)';
+  }
+
+  function select(i, focus) {
+    const p = state.plan;
+    if (!p || i < 0 || i >= p.changes.length) return;
+    state.selected = i;
+    const body = $('table').tBodies[0];
+    for (const tr of body.rows) {
+      const on = +tr.dataset.i === i;
+      tr.setAttribute('aria-selected', on);
+      tr.tabIndex = on ? 0 : -1;
+      if (on) { tr.scrollIntoView({ block: 'nearest' }); if (focus) tr.focus(); }
+    }
+    drawAll(true);
+  }
+
+  function drawAll(skipTiles) {
+    if (!state.plan) return;
+    if (!skipTiles) tiles();
+    drawOverview();
+    drawDetail();
+  }
+
+  // ------------------------------------------------------------- learning
+
+  function calParams() {
+    const low = parseNote($('cal-low').value), high = parseNote($('cal-high').value);
+    const vels = $('cal-vels').value.split(/[^0-9]+/).map(Number).filter(v => v >= 1 && v <= 127);
+    const ksText = $('cal-ks').value.trim();
+    const ks = ksText ? parseNote(ksText) : null;
+    const takes = Math.max(1, Math.min(8, Math.round(num('cal-takes', 2))));
+    if (low === null || high === null || high < low) return { error: 'Write the keys as note names, such as C1 and C6, lowest first.' };
+    if (!vels.length) return { error: 'Write at least one velocity between 1 and 127.' };
+    if (ksText && ks === null) return { error: 'Write the keyswitch as a note name, such as C-1, or leave it empty.' };
+    const bpm = num('cal-bpm', 120);
+    if (!(bpm >= 20 && bpm <= 400)) return { error: "Write your project's tempo, between 20 and 400 BPM." };
+    return { low, high, velocities: Array.from(new Set(vels)).sort((a, b) => a - b), repeats: takes, keyswitch: ks, bpm };
+  }
+
+  function updateCalLength() {
+    const c = calParams();
+    if (c.error) { $('cal-length').textContent = c.error; return; }
+    const sec = NPVF.calibrationLength(c);
+    const notes = (c.high - c.low + 1) * c.velocities.length * c.repeats;
+    $('cal-length').textContent = notes + ' notes, ' + (sec >= 90 ? Math.round(sec / 60) + ' minutes' : Math.round(sec) + ' seconds');
+  }
+
+  async function learn() {
+    const c = state.calParams || calParams();
+    $('cal-error').textContent = '';
+    if (c.error) { $('cal-error').textContent = c.error; return; }
+    const name = $('cal-title').value.trim() || baseName(state.calName) || 'Untitled';
+    $('cal-status').textContent = 'Measuring every test note…';
+    $('cal-learn').disabled = true;
+    await later();
+    try {
+      const midi = NPVF.parseMidi(NPVF.calibrationMidi(c));
+      const o = analyseOptions();
+      const r = NPVF.analyse(midi, state.calAudio, {
+        alignTo: o.alignTo, maxDelayMs: Math.max(o.maxDelayMs, 400), spreadMs: Math.max(o.maxDelayMs, 400),
+        audioOffsetMs: o.audioOffsetMs, method: o.method, keyswitchMax: c.keyswitch === null ? -1 : c.keyswitch,
+      });
+      const prof = NPVF.learnProfile(r, name);
+      if (r.stats.found < r.stats.notes * 0.8) {
+        throw new Error('Only ' + r.stats.found + ' of ' + r.stats.notes + ' test notes were found. Check the render matches the test MIDI you downloaded, starts at its first bar, and has the same keys and velocities.');
+      }
+      addProfile(prof);
+      const odd = prof.entries.filter(e => Math.abs(e.deviationDb) >= 1.5);
+      const oddKeys = Array.from(new Set(odd.map(e => NPVF.noteName(e.pitch))));
+      $('cal-status').textContent = 'Learned "' + name + '" from ' + r.stats.found + ' of ' + r.stats.notes + ' notes: heard ' +
+        fmt(r.stats.minMs, 0) + ' to ' + fmt(r.stats.maxMs, 0) + ' ms late. ' +
+        (oddKeys.length ? 'Keys 1.5 dB or more off: ' + oddKeys.slice(0, 12).join(', ') + (oddKeys.length > 12 ? '…' : '') + '.' : 'No key is 1.5 dB or more off.');
+      document.getElementById('src-profile').checked = true;
+      setSource('profile');
+    } catch (e) {
+      $('cal-error').textContent = e.message || String(e);
+      $('cal-status').textContent = '';
+    }
+    $('cal-learn').disabled = !state.calAudio;
+  }
+
+  // ----------------------------------------------------------------- wiring
+
+  function setSource(v) {
+    state.source = v;
+    $('drop-audio').classList.toggle('hidden', v !== 'render');
+    $('profile-box').classList.toggle('hidden', v !== 'profile');
+    $('learn').classList.toggle('hidden', v !== 'profile');
+    if (v === 'profile' && !state.profiles.length) $('learn').open = true;
+    schedule();
+  }
+
+  function init() {
+    state.profiles = loadProfiles().filter(p => { try { NPVF.checkProfile(p); return true; } catch (e) { return false; } });
+    fillProfiles();
+    updateCalLength();
+
+    document.querySelectorAll('input[name=source]').forEach(el => el.addEventListener('change', e => setSource(e.target.value)));
+    $('midi-choose').addEventListener('click', () => $('midi-input').click());
+    $('audio-choose').addEventListener('click', () => $('audio-input').click());
+    $('profile-load').addEventListener('click', () => $('profile-input').click());
+    $('cal-choose').addEventListener('click', () => $('cal-input').click());
+    $('midi-input').addEventListener('change', e => { if (e.target.files[0]) takeMidi(e.target.files[0]); e.target.value = ''; });
+    $('audio-input').addEventListener('change', e => { if (e.target.files[0]) takeAudio(e.target.files[0]); e.target.value = ''; });
+    $('profile-input').addEventListener('change', e => { if (e.target.files[0]) takeProfileFile(e.target.files[0]); e.target.value = ''; });
+    $('cal-input').addEventListener('change', e => { if (e.target.files[0]) takeCalAudio(e.target.files[0]); e.target.value = ''; });
+    wireDrop('drop-midi', takeMidi, isMidi);
+    wireDrop('drop-audio', takeAudio, isAudio);
+    wireDrop('profile-box', takeProfileFile, isJson);
+    wireDrop('drop-cal', takeCalAudio, isAudio);
+    // dropped anywhere else: sent where it belongs
+    document.addEventListener('dragover', e => e.preventDefault());
+    document.addEventListener('drop', e => {
+      e.preventDefault();
+      for (const f of Array.from(e.dataTransfer.files)) {
+        if (isMidi(f)) takeMidi(f);
+        else if (isJson(f)) takeProfileFile(f);
+        else if (state.source === 'profile' && $('learn').open) takeCalAudio(f);
+        else takeAudio(f);
+      }
+    });
+
+    $('profile-select').addEventListener('change', e => {
+      state.profile = state.profiles[+e.target.value] || null;
+      fillProfiles(); schedule();
+    });
+    $('profile-save').addEventListener('click', () => {
+      if (state.profile) download(JSON.stringify(state.profile, null, 1), state.profile.name.replace(/[\\/:*?"<>|]+/g, '-') + '.json', 'application/json');
+    });
+    $('profile-delete').addEventListener('click', () => {
+      const p = state.profile;
+      if (!p || !window.confirm('Delete the profile "' + p.name + '"? Unless you saved it as a file, it can\'t be brought back.')) return;
+      state.profiles = state.profiles.filter(q => q !== p);
+      state.profile = null;
+      storeProfiles(); fillProfiles(); schedule();
+    });
+
+    ['cal-low', 'cal-high', 'cal-vels', 'cal-takes', 'cal-ks', 'cal-bpm'].forEach(id => $(id).addEventListener('input', () => { state.calParams = null; updateCalLength(); }));
+    $('cal-download').addEventListener('click', () => {
+      const c = calParams();
+      $('cal-error').textContent = c.error || '';
+      if (c.error) return;
+      state.calParams = c;
+      download(NPVF.calibrationMidi(c), 'Test notes ' + NPVF.noteName(c.low) + '-' + NPVF.noteName(c.high) + '.mid', 'audio/midi');
+    });
+    $('cal-learn').addEventListener('click', learn);
+
+    // measuring settings re-measure; fixing settings only re-plan
+    ['align', 'maxdelay', 'spread', 'offset', 'ksmax', 'method', 'bpm'].forEach(id => $(id).addEventListener('change', schedule));
+    ['target', 'tolerance', 'dbvel', 'cc11base', 'dbcc', 'moveends'].forEach(id => $(id).addEventListener('change', replan));
+    ['timing', 'volume', 'using'].forEach(n => document.querySelectorAll('input[name=' + n + ']').forEach(el => el.addEventListener('change', replan)));
+    $('strength').addEventListener('input', e => { $('strength-out').textContent = e.target.value + '%'; replan(); });
+
+    $('download').addEventListener('click', () => {
+      if (!state.plan) return;
+      download(NPVF.applyPlan(state.plan), baseName(state.midiName) + ' (fixed).mid', 'audio/midi');
+    });
+
+    $('overview').addEventListener('click', e => {
+      if (!state.plan) return;
+      const rect = e.target.getBoundingClientRect();
+      const [t0, t1] = span();
+      const t = t0 + (e.clientX - rect.left) / rect.width * (t1 - t0);
+      let best = -1, bd = Infinity;
+      state.plan.changes.forEach((c, i) => { const d = Math.abs(c.note.t - t); if (d < bd) { bd = d; best = i; } });
+      select(best, false);
+    });
+    const body = $('table').tBodies[0];
+    body.addEventListener('click', e => { const tr = e.target.closest('tr'); if (tr) select(+tr.dataset.i, true); });
+    body.addEventListener('keydown', e => {
+      const n = state.plan ? state.plan.changes.length : 0;
+      const step = { ArrowDown: 1, ArrowUp: -1, PageDown: 10, PageUp: -10 }[e.key];
+      if (step) { e.preventDefault(); select(Math.max(0, Math.min(n - 1, state.selected + step)), true); }
+      else if (e.key === 'Home') { e.preventDefault(); select(0, true); }
+      else if (e.key === 'End') { e.preventDefault(); select(n - 1, true); }
+    });
+    if (window.ResizeObserver) new ResizeObserver(() => drawAll(true)).observe($('overview'));
+  }
+
+  init();
+})();
+
+</script>
+</body>
+</html>
