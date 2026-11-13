@@ -53,6 +53,60 @@ After that, any part played on that patch only needs its MIDI file: drop it
 in, choose the profile, download the fix. Profiles are kept in the browser;
 **Save Profile File…** keeps a copy you can open on another computer.
 
+### In REAPER: measure your libraries automatically
+
+Two scripts do the profile work for you, for any number of instruments and
+articulations, while you're away:
+
+- **Note Fixer - Measure Libraries** plays every key at several dynamics,
+  articulation by articulation, and saves a profile for each.
+- **Note Fixer - Fix Selected Items** fixes MIDI items from those profiles,
+  each note by the articulation its keyswitch (or CC, program change or
+  channel) chose.
+
+**Install.** They need ReaImGui (ReaPack › ReaTeam Extensions). Then add this
+repository in **Extensions › ReaPack › Import repositories…** with
+`https://raw.githubusercontent.com/KallumS/Note-Position-Volume-Fixer/main/index.xml`
+and install *Note Fixer*. (Until this work is merged into `main`, copy the
+`reaper` folder into REAPER's `Scripts` folder instead and load both scripts
+with **Actions › Load ReaScript…**.)
+
+**Measure.**
+
+1. Put the instrument on any track and load the patch - a SINE instrument,
+   a Kontakt patch, a Spitfire, Engine or Synchron preset. Select the track
+   and press **Add Instrument From Selected Track**. Name it after the patch.
+2. **Add Articulation** for each one you use, and say how it's chosen:
+   *Keyswitch* (a note name, such as C-1), *CC* (a number and value - with
+   Spitfire's UACC that's CC32), *Program change* or *MIDI channel*. Choose
+   **Dynamics: CC1** for long notes played on the mod wheel, **Velocity** for
+   short notes.
+3. Choose the keys, the levels (velocities or CC1 values) and the takes, and
+   press **Measure All**. Each instrument is put on a **new track**, waits for
+   its samples to load, plays each articulation's test, renders it offline,
+   measures it and is removed. Profiles go to REAPER's resource folder under
+   `Data/Note Fixer/Profiles`, one per articulation; **Skip ones already
+   measured** lets a stopped run carry on.
+
+**Fix.** Select MIDI items, open *Fix Selected Items*, check each track's
+instrument (it's guessed from the track's name) and press **Fix Selected
+Items**. Undo puts it back. The page above opens the same profiles.
+
+**For each player:**
+
+| Player | Choosing articulations | Worth knowing |
+| --- | --- | --- |
+| SINE (Orchestral Tools) | Set in the instrument's settings: keyswitch, CC, program change or MIDI channel | Match the switch type here to SINE's setting. |
+| Kontakt | Mostly keyswitches; some libraries use a CC or channels | Big patches take a while to load: raise *Seconds to load samples* if a test comes back with notes missing (it tries again once by itself). |
+| Spitfire | UACC on CC32 (values in the manual) or keyswitches | Long patches follow CC1 for dynamics. The *Tightness* control changes how late notes are: measure with the setting you play with. |
+| Engine (Best Service) | Keyswitches or program changes | |
+| Synchron Player (VSL) | Keyswitches or CCs, as the preset's Dimension Tree is set up | Turn off humanising of timing while measuring, or each take is late by a different random amount. |
+
+In every player, a profile is only true for the settings it was measured
+with: a different release, attack or "tightness" setting needs measuring
+again. Effects after the instrument (reverb) are switched off on the test
+track while measuring.
+
 ### What the settings do
 
 | Setting | What it does |
@@ -90,13 +144,17 @@ Max for Live device as the next step for Ableton.
 ## For developers
 
 ```sh
-npm test            # the engine: 34 checks against a made-up library with known delays
+npm test            # the engine: 35 checks against a made-up library with known delays
 npm run build       # writes Note-Position-Volume-Fixer.html from src/
 npm run test:ui     # builds, then drives the page in Chromium (needs Playwright)
+npm run test:lua    # the REAPER scripts: Lua tests, Lua against the engine, the windows in a mock REAPER (needs lua5.4)
+npm run test:all    # everything
 ```
 
 `src/engine.js` does all the measuring and MIDI writing and runs in Node and
-the browser alike; `src/app.html` and `src/app.js` are the page. See
+the browser alike; `src/app.html` and `src/app.js` are the page. `reaper/`
+holds the REAPER scripts; their measuring is a Lua port of the engine's, kept
+in step by `tests/lua_parity.js`. See
 [`CLAUDE.md`](CLAUDE.md) and [`docs/decisions/`](docs/decisions/README.md).
 
 ## Licence

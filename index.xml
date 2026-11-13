@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ReaPack index for Note Fixer (the REAPER half of Note Position & Volume Fixer).
+
+  Add this repository in REAPER with Extensions > ReaPack > Import repositories,
+  pasting the raw URL of this file on the default branch:
+
+    https://raw.githubusercontent.com/KallumS/Note-Position-Volume-Fixer/main/index.xml
+
+  That URL only resolves once this file is on the default branch.
+
+  Each <source> is pinned to a commit rather than a branch, so an installed
+  version is the exact set of files that was tested. Publishing a new version
+  means adding a <version> block with a fresh commit hash - never editing an
+  existing one.
+
+  Both scripts are one package and install into one folder, because they load
+  the same modules from beside themselves, and ReaPack won't let two packages
+  install the same file. ReaPack keys a package by its NAME, so don't rename it.
+-->
+<index version="1" name="Note Position &amp; Volume Fixer">
+  <category name="MIDI">
+
+    <reapack name="Note Fixer.lua" type="script" desc="Note Fixer: measure sample libraries, fix note timing and volume">
+      <metadata>
+        <description><![CDATA[Measure Libraries plays every key of your sample libraries (SINE, Kontakt, Spitfire, Engine, Synchron and others) at several dynamics, articulation by articulation, on a new track, and notes down how late and how loud each note really sounds. Fix Selected Items then moves the notes of MIDI items so each sound lands where it was written, and evens out notes recorded too loud or too quiet. Needs ReaImGui.]]></description>
+        <link rel="website">https://github.com/KallumS/Note-Position-Volume-Fixer</link>
+      </metadata>
+      <version name="1.0" author="kallums" time="2026-11-13T20:00:00Z">
+        <changelog><![CDATA[First release. Measure Libraries: add an instrument from a track with a patch loaded, list its articulations and how each is chosen (keyswitch, CC, program change or MIDI channel) and whether its dynamics follow velocity or CC1, and press Measure All. Each test runs on a new track, rendered offline, and is removed afterwards. Fix Selected Items: moves each note by its own key and dynamic's delay, chosen by the articulation in force, and changes velocity (or CC11 for long notes) where a key is too loud or too quiet. Undo puts it back. Needs ReaImGui.]]></changelog>
+        <source main="main" file="Note Fixer - Measure Libraries.lua">https://raw.githubusercontent.com/KallumS/Note-Position-Volume-Fixer/75e8f4892d67efe504d2b985f8f46c41f4403054/reaper/Note%20Fixer%20-%20Measure%20Libraries.lua</source>
+        <source main="main" file="Note Fixer - Fix Selected Items.lua">https://raw.githubusercontent.com/KallumS/Note-Position-Volume-Fixer/75e8f4892d67efe504d2b985f8f46c41f4403054/reaper/Note%20Fixer%20-%20Fix%20Selected%20Items.lua</source>
+        <source file="npvf_json.lua">https://raw.githubusercontent.com/KallumS/Note-Position-Volume-Fixer/75e8f4892d67efe504d2b985f8f46c41f4403054/reaper/npvf_json.lua</source>
+        <source file="npvf_measure.lua">https://raw.githubusercontent.com/KallumS/Note-Position-Volume-Fixer/75e8f4892d67efe504d2b985f8f46c41f4403054/reaper/npvf_measure.lua</source>
+        <source file="npvf_fix.lua">https://raw.githubusercontent.com/KallumS/Note-Position-Volume-Fixer/75e8f4892d67efe504d2b985f8f46c41f4403054/reaper/npvf_fix.lua</source>
+        <source file="npvf_reaper.lua">https://raw.githubusercontent.com/KallumS/Note-Position-Volume-Fixer/75e8f4892d67efe504d2b985f8f46c41f4403054/reaper/npvf_reaper.lua</source>
+        <source file="npvf_ui.lua">https://raw.githubusercontent.com/KallumS/Note-Position-Volume-Fixer/75e8f4892d67efe504d2b985f8f46c41f4403054/reaper/npvf_ui.lua</source>
+      </version>
+    </reapack>
+
+  </category>
+</index>

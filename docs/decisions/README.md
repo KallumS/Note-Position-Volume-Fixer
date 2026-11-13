@@ -12,3 +12,5 @@ replaced it.
 | [0004](0004-learned-profiles.md) | Learned profiles |
 | [0005](0005-the-house-colours-always-dark.md) | The house colours, always dark |
 | [0006](0006-apples-hig-foundations.md) | Apple's HIG Foundations |
+| [0007](0007-reaper-measures-the-libraries.md) | REAPER measures the libraries, a new track for each |
+| [0008](0008-articulations-by-switch-dynamics-by-velocity-or-cc1.md) | Articulations by their switch; dynamics by velocity or CC1 |

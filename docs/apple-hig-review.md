@@ -22,3 +22,18 @@ guessed.
 | Dark appearance | Dark Mode | User's decision: always dark, the house scheme (0005). |
 | Increase Contrast, Dynamic Type | Accessibility | Not met: the page follows browser zoom only. |
 | Accessibility Inspector, VoiceOver pass | Accessibility | Not run: needs a Mac. |
+
+## The REAPER windows (Note Fixer)
+
+| Item | Verdict |
+| --- | --- |
+| Text 7:1, ink on every button, grey or yellow buttons | Met, and checked every frame by `tests/lua/test_scripts.lua`. |
+| Chosen not by colour alone | Met: a chosen button also has a bar under its words (as Good Idea). |
+| Field and tick-box edges 3:1 | Met: `#8A919C` edges (4.7:1). |
+| Keyboard alone | Met as far as ReaImGui goes: keyboard navigation on, Esc closes (not during a run). |
+| Control size | Met: 28-point controls, 12 apart. |
+| Recover from mistakes | Met: fixing is one undo point; removing an instrument asks first and keeps its profiles; a stopped run carries on with *Skip ones already measured*. |
+| Messages say what to do | Met: e.g. a test with notes missing says to check the switch, the keys and that the patch sounds. |
+| Long work shows progress and can be stopped | Met: a progress bar, the step in words, and Stop. |
+| Text size | Not met: no 100-200% choice yet, which Good Idea has. |
+| VoiceOver | Not possible: ReaImGui draws its own window. |

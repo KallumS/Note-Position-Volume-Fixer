@@ -1,10 +1,18 @@
 # Note Position & Volume Fixer
 
-A one-file web page (`Note-Position-Volume-Fixer.html`, built from `src/`)
-that measures a render of a MIDI part - where each note is heard and how loud
-it is - and writes the MIDI back with notes moved and velocities (or CC11)
-changed. Or learns a profile per patch from a test render and fixes any part
-from it. Works with any DAW through MIDI and audio files.
+Two halves sharing one profile format:
+
+- **The page** - a one-file web page (`Note-Position-Volume-Fixer.html`,
+  built from `src/`) that measures a render of a MIDI part - where each note
+  is heard and how loud it is - and writes the MIDI back with notes moved and
+  velocities (or CC11) changed, or learns a profile from a test render and
+  fixes any part from it. Any DAW, through files.
+- **Note Fixer for REAPER** (`reaper/`) - *Measure Libraries* plays every
+  key of each captured instrument, articulation by articulation, on a new
+  track, and saves profiles; *Fix Selected Items* fixes MIDI items from them,
+  each note by the articulation its switch chose (0007, 0008). The user
+  focuses on REAPER for measuring, with SINE, Kontakt, Spitfire, Engine and
+  Synchron Player libraries.
 
 The user is not a developer. Explain in plain words, show pictures of what
 changed, and keep the README's "Use" section true: it is how they learn it.
@@ -32,6 +40,16 @@ Their main DAW is Ableton Live; Cubase and REAPER matter too.
 | `tests/synth.js` | A made-up library with known per-key/velocity delays, attacks and three faulty keys (64, 67, 71). |
 | `tests/run_tests.js` | Engine tests. Most render, fix, render again and check against the library's own numbers. |
 | `tests/ui_test.js` | Drives the built page in Chromium: files, keyboard, download, learning a profile, reload. |
+| `reaper/npvf_measure.lua` | Lua port of the engine's measuring, for test notes played one at a time, and `learnProfile`. **No REAPER.** |
+| `reaper/npvf_fix.lua` | `profileAt` and the fix plan for several profiles, each note's articulation from its switch. **No REAPER.** |
+| `reaper/npvf_json.lua` | JSON. |
+| `reaper/npvf_reaper.lua` | Everything that touches REAPER but not the window: capture an FX chain, make the test track, render and read it, clean up, read and write items. |
+| `reaper/npvf_ui.lua` | The house theme and the family's widgets for ReaImGui (after Good Idea). |
+| `reaper/Note Fixer - *.lua` | The two windows. |
+| `tests/lua/test_fix.lua` | Lua unit tests: articulation choice, CC1 profiles, JSON. |
+| `tests/lua_parity.js` | Lua and the engine measure the same renders (and plan the same fix) and must agree. |
+| `tests/lua/test_scripts.lua` | Both windows end to end in `reaper_mock.lua` + `imgui_mock.lua`; the mock's *Apply FX* renders the made-up library via `render_cli.js`. |
+| `index.xml` | ReaPack index: one package, both scripts, every source pinned to a commit. New version = new `<version>` block with a new hash; never edit an old one. |
 
 ## Working in it
 
@@ -39,7 +57,20 @@ Their main DAW is Ableton Live; Cubase and REAPER matter too.
 npm test                      # engine, ~7 s
 node tools/build.js           # after any change in src/
 NODE_PATH=$(npm root -g) node tests/ui_test.js [shots-dir]   # page; Playwright is global here
+sh tools/test.sh              # everything, ~1.5 min
 ```
+
+A fresh container has no Lua: `apt-get update && apt-get install -y lua5.4`.
+
+- **A change to measuring goes into both `src/engine.js` and
+  `reaper/npvf_measure.lua`**, then `node tests/lua_parity.js`. Same for
+  `profileAt` and the plan in `npvf_fix.lua`.
+- **The REAPER mock is written from the API's documented signatures, not
+  from the scripts.** A function the scripts need that isn't there gets
+  added from its documented signature; anything missing raises. Extension
+  functions (SWS) read nil unless `P.sws`.
+- **Prove a test bites** by breaking the code in a scratch copy (the session
+  log lists the sabotages tried).
 
 - **When fixing a bug, have a test fail on the old code first.**
 - **Check accuracy against ground truth, not against the tool.** Measuring a
@@ -93,6 +124,21 @@ NODE_PATH=$(npm root -g) node tests/ui_test.js [shots-dir]   # page; Playwright 
 - Middle C is **C3** (Live and Cubase). `noteName` and the page's note
   parser agree; REAPER users see C4 for the same key.
 
+## REAPER rules that are easy to break
+
+- **A test never uses the user's tracks.** It makes a track, copies the
+  captured FX chain onto it with new FXIDs, and deletes the track, the item
+  and the rendered file afterwards - also when stopped or on an error
+  (`ui.finish` → `cleanup`).
+- **Stop is checked inside measuring** (the progress callback raises `STOP`),
+  so it doesn't wait for a whole articulation.
+- **`writeTake` places every note and CC again from its time** after
+  extending an item to the left, so it doesn't matter whether
+  `MIDI_SetItemExtents` keeps times or PPQ. Note-ons/offs and CCs are set
+  with noSort, then sorted, then CC11s inserted.
+- Middle C is C3 in the windows too (`U.noteName`, `U.parseNote`); REAPER
+  itself may show C4.
+
 ## Colour and Apple's HIG
 
 The house scheme (Good Idea's `docs/COLOUR.md`; 0005): ground `#23272E`,
@@ -113,3 +159,6 @@ public.
 - `vi-control.net` and `ownlifeaudio.com` are blocked by this environment's
   network policy; search results are all there is of them.
 - Playwright and Chromium are installed globally; `NODE_PATH=$(npm root -g)`.
+- The family's ReaScripts to copy from: Good Idea (`reascripts/`, its
+  `tests/reaper_mock.lua` and `hig_mock.lua`, and `docs/COLOUR.md`), cloned
+  read-only from `github.com/KallumS/Good-Idea`.
