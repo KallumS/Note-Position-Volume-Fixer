@@ -158,6 +158,57 @@ test("measured ones are skipped next time", function()
   ok(texts(G):find("Nothing to measure"), texts(G))
 end)
 
+test("a Cubase expression map brings in the articulations, outputs and all", function()
+  P.fileToOpen = REPO .. "tests/fixtures/Test Strings.expressionmap"
+  local asked = #P.mb
+  G.click("Import Articulations…"); P.frames(1); P.frames(1)
+  ok(#P.mb == asked + 1 and P.mb[#P.mb]:find("Replace Fake Strings's 2 articulations"), "asks before replacing: " .. tostring(P.mb[#P.mb]))
+  ok(texts(G):find("Imported 3 articulations from Test Strings.expressionmap; 3 ticked"), texts(G))
+  ok(texts(G):find("C#-1 + D2 + CC20 = 64", 1, true), "the long one's outputs in words")
+  ok(texts(G):find("Program 7, channel 3", 1, true), "pizzicato's program and channel")
+  checkLook(G, "after importing")
+end)
+
+test("measuring from the map: in-range keyswitches are never played, and more is saved", function()
+  G.set("Skip ones already measured", false)
+  G.set("Library", "Test Library")
+  G.set("Lowest key", "C2"); G.set("Highest key", "B2") -- D2 is the long articulation's second keyswitch
+  P.frames(1); P.frames(1)
+  G.click("Measure All")
+  P.frames(800, function() return texts(G):find("\nDone") or texts(G):find("^Done") end)
+  ok(texts(G):find("Done. 3 profiles saved"), texts(G))
+  ok(texts(G):find("Plays C2 to B2", 1, true), "the range heard")
+  local long = J.decode(io.open(folder .. "Test Library - Fake Strings - Long + Mute.json"):read("a"))
+  ok(long.version == 2 and long.library == "Test Library" and long.name == "Test Library - Fake Strings - Long + Mute", "named with its library")
+  ok(#long.send == 3 and long.send[2].pitch == 50 and long.dynamics == "cc1" and long.source:find("Cubase expression map"), "outputs and source kept")
+  for _, e in ipairs(long.entries) do ok(e.pitch ~= 50, "D2, a keyswitch, was never played as a test note") end
+  local ks = {} for _, e in ipairs(long.entries) do ks[#ks + 1] = e.pitch .. "/" .. e.vel end
+  ok(#long.entries == 22 and long.test.keyswitchKeysSkipped[3] == 50, "the other 11 keys at both levels: " .. table.concat(ks, " ") .. ", levels " .. J.encode(long.test.levels))
+  ok(long.entries[1].startMs < long.entries[1].attackMs and #long.entries[1].takesMs == 1, "start, attack and each take")
+  local pizz = J.decode(io.open(folder .. "Test Library - Fake Strings - Pizzicato.json"):read("a"))
+  ok(pizz.channel == 3 and pizz.send[1].kind == "program", "pizzicato's channel and program")
+  local stac = J.decode(io.open(folder .. "Test Library - Fake Strings - Staccato.json"):read("a"))
+  ok(math.abs((long.summary.medianMs - stac.summary.medianMs) - 40) < 3, "the long one is 40 ms later")
+  local index = J.decode(io.open(tmp .. "/Data/Note Fixer/Library.json"):read("a"))
+  ok(index.kind == "note-position-volume-fixer/library" and #index.profiles == 5, "Library.json lists every profile: " .. #index.profiles)
+  local found
+  for _, e in ipairs(index.profiles) do if e.file == "Profiles/Test Library - Fake Strings - Long + Mute.json" then found = e end end
+  ok(found and found.medianMs == long.summary.medianMs and found.range.low == 48, "with the headline numbers")
+end)
+
+test("a Reaticulate file with several instruments asks which one", function()
+  P.fileToOpen = REPO .. "tests/fixtures/Test Strings.reabank"
+  G.click("Import Articulations…"); P.frames(1); P.frames(1)
+  ok(texts(G):find("This file has 2 instruments"), texts(G))
+  G.set("arts/##bank", nil)
+  G.set("##bank", 2); P.frames(1)
+  G.click("Import This One"); P.frames(1); P.frames(1)
+  ok(texts(G):find("Imported 2 articulations"), texts(G))
+  ok(texts(G):find("Program 5", 1, true) and texts(G):find("Reaticulate 2", 1, true), "the cellos' outputs and program numbers")
+  local saved = J.decode(io.open(tmp .. "/Data/Note Fixer/Instruments.json"):read("a"))
+  ok(saved[1].articulations[2].program == 2 and saved[1].articulations[2].channel == 2, "kept on disk")
+end)
+
 print("Fix Selected Items")
 
 -- a part: staccato (C-1) at the item's very start, then long notes (C#-1) on CC1

@@ -42,11 +42,14 @@ Their main DAW is Ableton Live; Cubase and REAPER matter too.
 | `tests/ui_test.js` | Drives the built page in Chromium: files, keyboard, download, learning a profile, reload. |
 | `reaper/npvf_measure.lua` | Lua port of the engine's measuring, for test notes played one at a time, and `learnProfile`. **No REAPER.** |
 | `reaper/npvf_fix.lua` | `profileAt` and the fix plan for several profiles, each note's articulation from its switch. **No REAPER.** |
+| `reaper/npvf_maps.lua` | Reads Cubase expression maps, Logic articulation sets and Reaticulate banks into articulations with `send` (outputs), `channel`, `program` (0009). **No REAPER.** |
 | `reaper/npvf_json.lua` | JSON. |
 | `reaper/npvf_reaper.lua` | Everything that touches REAPER but not the window: capture an FX chain, make the test track, render and read it, clean up, read and write items. |
 | `reaper/npvf_ui.lua` | The house theme and the family's widgets for ReaImGui (after Good Idea). |
 | `reaper/Note Fixer - *.lua` | The two windows. |
-| `tests/lua/test_fix.lua` | Lua unit tests: articulation choice, CC1 profiles, JSON. |
+| `tests/lua/test_fix.lua` | Lua unit tests: articulation choice (combinations, UACC KS, Reaticulate programs), CC1 profiles, JSON. |
+| `tests/lua/test_maps.lua` | The map readers, on `tests/fixtures/Test Strings.*` (written here in each format's real layout). Give it a folder of real maps to read those too. |
+| `docs/profile-format.md` | **What is saved**: profiles (version 2), `Library.json`, `Instruments.json`. Change it with the format. |
 | `tests/lua_parity.js` | Lua and the engine measure the same renders (and plan the same fix) and must agree. |
 | `tests/lua/test_scripts.lua` | Both windows end to end in `reaper_mock.lua` + `imgui_mock.lua`; the mock's *Apply FX* renders the made-up library via `render_cli.js`. |
 | `index.xml` | ReaPack index: one package, both scripts, every source pinned to a commit. New version = new `<version>` block with a new hash; never edit an old one. |
@@ -125,6 +128,22 @@ A fresh container has no Lua: `apt-get update && apt-get install -y lua5.4`.
   parser agree; REAPER users see C4 for the same key.
 
 ## REAPER rules that are easy to break
+
+- **A profile's fields are a promise to scripts to come** (0010,
+  `docs/profile-format.md`): add fields, don't rename or drop them, and bump
+  `M.PROFILE_VERSION` when a meaning changes. Old profiles must keep
+  working (`F.conditions` reads the version 1 `switch`).
+- **The test never plays a key the instrument uses as a keyswitch**
+  (`keyswitchKeys`, `skip` in `testLayout`): VSL maps have them in range.
+- **Which articulation a note plays** (`F.plan`, 0009): keys held on are a
+  set; a new key turns off only keys no articulation combines it with;
+  velocity tells keys apart where articulations differ by it; most specific
+  wins, then latest; a Reaticulate program chooses directly.
+- **Real maps aren't committed** (they're others' work). Fixtures are
+  written by hand in the real layout; `test_maps.lua <folder>` checks a
+  folder of real ones (Kabraxist/Expression-2-Reaticulate's sources,
+  tpoots/cubase-expression-maps, nobodo/logic-pro-x-articulation-sets and
+  jtackaberry/reaticulate's userbanks were the ones tried: all read).
 
 - **A test never uses the user's tracks.** It makes a track, copies the
   captured FX chain onto it with new FXIDs, and deletes the track, the item

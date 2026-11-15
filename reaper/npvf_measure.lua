@@ -257,22 +257,29 @@ function M.findOnset(env, a, b, limit, o)
     if k >= ks and v > ownPeak then ownPeak, kOwnPeak = v, k end
   end
   if ownPeak <= 0 then
-    return { onset = env.t0 + ks * env.hop, peakDb = pv, baseDb = base, riseDb = 0, slope = best, atEdge = true, peakTime = env.t0 + ks * env.hop }
+    return { onset = env.t0 + ks * env.hop, peakDb = pv, baseDb = base, riseDb = 0, slope = best, atEdge = true, peakTime = env.t0 + ks * env.hop, loudestTime = env.t0 + ks * env.hop, attackTime = env.t0 + ks * env.hop, startTime = env.t0 + ks * env.hop }
   end
   local ownPeakDb = 10 * log10(ownPeak)
   local rise = ownPeakDb - (icept + slope * ks)
-  local drop = o.alignTo == "start" and o.startDb or o.attackDb
-  local function thrAt(k) return max(ownPeak * 10 ^ (-drop / 10), 0.5 * tail(k)) end
-  local k = kOwnPeak
-  while k > kb0 and own[k - 1] >= thrAt(k - 1) do k = k - 1 end
-  local t = env.t0 + k * env.hop
-  if k > kb0 then
-    local a0, a1 = own[k - 1] - thrAt(k - 1), own[k] - thrAt(k)
-    if a1 > a0 then t = env.t0 + (k - 1 + (-a0) / (a1 - a0)) * env.hop end
+  -- where this note's own sound crosses `drop` dB below its peak, walking back from the peak
+  local function crossing(drop)
+    local function thrAt(k) return max(ownPeak * 10 ^ (-drop / 10), 0.5 * tail(k)) end
+    local k = kOwnPeak
+    while k > kb0 and own[k - 1] >= thrAt(k - 1) do k = k - 1 end
+    local t = env.t0 + k * env.hop
+    if k > kb0 then
+      local a0, a1 = own[k - 1] - thrAt(k - 1), own[k] - thrAt(k)
+      if a1 > a0 then t = env.t0 + (k - 1 + (-a0) / (a1 - a0)) * env.hop end
+    end
+    return t
   end
+  local attackT, startT = crossing(o.attackDb), crossing(o.startDb)
   return {
-    onset = t, peakDb = ownPeakDb, baseDb = base, riseDb = max(rise, ownPeakDb - base), slope = best,
-    peakTime = env.t0 + kOwnPeak * env.hop, atEdge = (ks == ka or ks == kb),
+    onset = o.alignTo == "start" and startT or attackT, attackTime = attackT, startTime = startT,
+    -- when the attack is done: within 1 dB of its peak (the loudest moment itself wanders along a flat top)
+    peakTime = crossing(1),
+    peakDb = ownPeakDb, baseDb = base, riseDb = max(rise, ownPeakDb - base), slope = best,
+    loudestTime = env.t0 + kOwnPeak * env.hop, atEdge = (ks == ka or ks == kb),
   }
 end
 
@@ -308,8 +315,11 @@ M.TEST_DEFAULTS = {
   spacing = 1.0,               -- seconds from one note to the next
   noteLength = 0.25,           -- seconds each note is held
   lead = 2.0,                  -- seconds before the first note (the switch goes in here)
-  channel = 0,                 -- 0-15
-  switch = nil,                -- { type = "keyswitch"|"cc"|"program"|"channel", value = n, cc = n }
+  channel = 0,                 -- 0-15, unless the articulation names one
+  send = nil,                  -- outputs that choose the articulation: { kind = "note"|"cc"|"program", ... } (npvf_maps.lua)
+  outChannel = nil,            -- 1-16: the articulation is played on this channel
+  switch = nil,                -- before 1.1: { type = "keyswitch"|"cc"|"program"|"channel", value = n, cc = n }
+  skip = nil,                  -- { [pitch] = true }: keys never played (the instrument's keyswitches)
 }
 
 --- What to play: events and the notes to measure, in seconds. Notes on a key go up the range, then the next level.
@@ -318,21 +328,29 @@ function M.testLayout(opts)
   for k, v in pairs(M.TEST_DEFAULTS) do o[k] = v end
   for k, v in pairs(opts or {}) do o[k] = v end
   local ev, notes = {}, {}
-  local chan = o.channel
+  local chan = o.channel or 0
+  -- what chooses the articulation: `send` (outputs, from a map) and `outChannel` (1-16), or a single `switch`
+  local send = o.send
   local sw = o.switch
-  if sw and sw.type == "channel" then chan = max(0, min(15, (sw.value or 1) - 1)) end
-  if sw and sw.type == "keyswitch" then
-    ev[#ev + 1] = { t = o.lead / 2, kind = "note", chan = chan, pitch = sw.value, vel = 100, len = 0.125 }
-  elseif sw and sw.type == "cc" then
-    ev[#ev + 1] = { t = o.lead / 2, kind = "cc", chan = chan, cc = sw.cc or 32, value = sw.value }
-  elseif sw and sw.type == "program" then
-    ev[#ev + 1] = { t = o.lead / 2, kind = "program", chan = chan, value = sw.value }
+  if not send and sw then
+    send = {}
+    if sw.type == "keyswitch" then send[1] = { kind = "note", pitch = sw.value, vel = sw.vel or 100 }
+    elseif sw.type == "cc" then send[1] = { kind = "cc", cc = sw.cc or 32, value = sw.value }
+    elseif sw.type == "program" then send[1] = { kind = "program", value = sw.value }
+    elseif sw.type == "channel" then o.outChannel = sw.value end
+  end
+  if o.outChannel then chan = max(0, min(15, o.outChannel - 1)) end
+  for i, out in ipairs(send or {}) do
+    local t = o.lead / 2 + (i - 1) * 0.01
+    if out.kind == "note" then ev[#ev + 1] = { t = t, kind = "note", chan = chan, pitch = out.pitch, vel = out.vel or 100, len = 0.125 }
+    elseif out.kind == "cc" then ev[#ev + 1] = { t = t, kind = "cc", chan = chan, cc = out.cc, value = out.value }
+    elseif out.kind == "program" then ev[#ev + 1] = { t = t, kind = "program", chan = chan, value = out.value } end
   end
   if o.dynamics ~= "cc1" then ev[#ev + 1] = { t = o.lead / 4, kind = "cc", chan = chan, cc = 1, value = o.cc1 } end
   local t = o.lead
   for _, level in ipairs(o.levels) do
     for p = o.low, o.high do
-      for _ = 1, o.takes do
+      for _ = 1, (o.skip and o.skip[p]) and 0 or o.takes do
         local vel = level
         if o.dynamics == "cc1" then
           vel = o.velocity
@@ -351,7 +369,9 @@ function M.testSeconds(opts)
   local o = {}
   for k, v in pairs(M.TEST_DEFAULTS) do o[k] = v end
   for k, v in pairs(opts or {}) do o[k] = v end
-  return o.lead + (o.high - o.low + 1) * #o.levels * o.takes * o.spacing + 1.5
+  local keys = 0
+  for p = o.low, o.high do if not (o.skip and o.skip[p]) then keys = keys + 1 end end
+  return o.lead + keys * #o.levels * o.takes * o.spacing + 1.5
 end
 
 local function measureNote(read, fs, note, nextT, o, whole)
@@ -385,9 +405,12 @@ local function measureNote(read, fs, note, nextT, o, whole)
   res.found = true
   res.onset = r.onset
   res.delay = r.onset - note.t
+  res.startDelay = r.startTime - note.t
+  res.attackDelay = r.attackTime - note.t
+  res.peakDelay = r.peakTime - note.t
   res.atEdge = r.atEdge
   if not whole then
-    local k = min(benv.n - 1, max(0, round((r.peakTime - benv.t0) / benv.hop)))
+    local k = min(benv.n - 1, max(0, round((r.loudestTime - benv.t0) / benv.hop)))
     res.harmonicShareDb = r.peakDb - benv.db[k + 1]
   end
   return res, env
@@ -514,7 +537,13 @@ end
 
 local function r2(x) return floor(x * 100 + 0.5) / 100 end
 
---- A profile in the same format the page reads (engine.js checkProfile), plus where it came from.
+M.PROFILE_VERSION = 2
+
+--[[ A profile in the format the page reads (engine.js checkProfile), with
+     everything the test found, for scripts to come. docs/profile-format.md
+     describes every field. `meta`: instrument, articulation, library,
+     plugin, send, outChannel, program, category, source, test (the layout's
+     options), sampleRate. ]]
 function M.learnProfile(result, meta)
   meta = meta or {}
   local groups, order = {}, {}
@@ -526,30 +555,85 @@ function M.learnProfile(result, meta)
       g[#g + 1] = r
     end
   end
+  local function ms(g, key)
+    local v = {}
+    for _, r in ipairs(g) do if r[key] then v[#v + 1] = r[key] end end
+    return #v > 0 and r2(median(v) * 1000) or nil
+  end
   local entries = {}
   for _, k in ipairs(order) do
     local g = groups[k]
-    local d, l, dev = {}, {}, {}
-    for i, r in ipairs(g) do d[i] = r.delay; l[i] = r.loudDb; dev[i] = r.deviationDb or 0 end
+    local d, l, dev, takes = {}, {}, {}, {}
+    for i, r in ipairs(g) do d[i] = r.delay; l[i] = r.loudDb; dev[i] = r.deviationDb or 0; takes[i] = r2(r.delay * 1000) end
+    local lo, hi = minmax(d)
     entries[#entries + 1] = {
       pitch = g[1].pitch, vel = g[1].level,
-      delayMs = r2(median(d) * 1000), loudDb = r2(median(l)), deviationDb = r2(median(dev)),
-      spreadMs = r2((select(2, minmax(d)) - select(1, minmax(d))) * 1000), takes = #g,
+      delayMs = r2(median(d) * 1000), startMs = ms(g, "startDelay"), attackMs = ms(g, "attackDelay"), peakMs = ms(g, "peakDelay"),
+      loudDb = r2(median(l)), deviationDb = r2(median(dev)),
+      spreadMs = r2((hi - lo) * 1000), takes = #g, takesMs = takes,
     }
   end
   table.sort(entries, function(a, b) return a.pitch < b.pitch or (a.pitch == b.pitch and a.vel < b.vel) end)
   if #entries == 0 then return nil, "No test notes were found in the render." end
+
+  -- keys never heard at any level: outside the patch's range, or silent there
+  local heard, played = {}, {}
+  for _, r in ipairs(result.notes) do
+    played[r.pitch] = true
+    if r.found then heard[r.pitch] = true end
+  end
+  local silent, low, high = {}, math.huge, -math.huge
+  for p in pairs(played) do
+    if heard[p] then low = min(low, p); high = max(high, p) else silent[#silent + 1] = p end
+  end
+  table.sort(silent)
   local notFound = {}
   for _, r in ipairs(result.notes) do if not r.found then notFound[#notFound + 1] = { pitch = r.pitch, vel = r.level } end end
-  local name = meta.name or ((meta.instrument or "Untitled") .. (meta.articulation and meta.articulation ~= "" and (" - " .. meta.articulation) or ""))
+
+  -- the summary a later script can read at a glance
+  local all, byLevel, spreads, levels = {}, {}, {}, {}
+  for _, e in ipairs(entries) do
+    all[#all + 1] = e.delayMs
+    if e.takes > 1 then spreads[#spreads + 1] = e.spreadMs end
+    if not byLevel[e.vel] then byLevel[e.vel] = {}; levels[#levels + 1] = e.vel end
+    table.insert(byLevel[e.vel], e.delayMs)
+  end
+  table.sort(levels)
+  local perLevel = {}
+  for _, v in ipairs(levels) do perLevel[#perLevel + 1] = { level = v, delayMs = r2(median(byLevel[v])) } end
+  local dLo, dHi = minmax(all)
+  local loudKeys, seen = {}, {}
+  for _, e in ipairs(entries) do
+    if math.abs(e.deviationDb) >= 1.5 and not seen[e.pitch] then seen[e.pitch] = true; loudKeys[#loudKeys + 1] = e.pitch end
+  end
+
+  local instrument = meta.instrument
+  local name = meta.name or table.concat((function()
+    local parts = {}
+    if meta.library and meta.library ~= "" then parts[#parts + 1] = meta.library end
+    parts[#parts + 1] = instrument or "Untitled"
+    if meta.articulation and meta.articulation ~= "" then parts[#parts + 1] = meta.articulation end
+    return parts
+  end)(), " - ")
   return {
-    kind = "note-position-volume-fixer/profile", version = 1,
-    name = name, instrument = meta.instrument, articulation = meta.articulation, plugin = meta.plugin,
-    switch = meta.switch, dynamics = result.options.dynamics or "velocity",
+    kind = "note-position-volume-fixer/profile", version = M.PROFILE_VERSION,
+    name = name, library = (meta.library ~= "" and meta.library) or nil, instrument = instrument,
+    articulation = meta.articulation, plugin = meta.plugin, category = meta.category,
+    send = meta.send, channel = meta.outChannel, program = meta.program, switch = meta.switch, source = meta.source,
+    dynamics = result.options.dynamics or "velocity",
     created = meta.created or os.date("!%Y-%m-%dT%H:%M:%SZ"),
-    measuredIn = meta.measuredIn or "REAPER",
-    alignTo = result.options.alignTo,
+    measuredIn = meta.measuredIn or "REAPER", measuredBy = meta.measuredBy,
+    sampleRate = meta.sampleRate,
+    alignTo = result.options.alignTo, attackDb = result.options.attackDb, startDb = result.options.startDb,
+    test = meta.test,
     dbPerVelocity = result.model.dbPerVelocity,
+    range = { low = low, high = high }, silentKeys = silent,
+    summary = {
+      notes = result.stats.notes, found = result.stats.found,
+      medianMs = r2(median(all)), minMs = dLo, maxMs = dHi,
+      roundRobinSpreadMs = #spreads > 0 and r2(median(spreads)) or nil,
+      byLevel = perLevel, offKeys = loudKeys,
+    },
     notFound = notFound,
     entries = entries,
   }

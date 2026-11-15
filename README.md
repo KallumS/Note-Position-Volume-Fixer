@@ -76,11 +76,26 @@ with **Actions › Load ReaScript…**.)
 1. Put the instrument on any track and load the patch - a SINE instrument,
    a Kontakt patch, a Spitfire, Engine or Synchron preset. Select the track
    and press **Add Instrument From Selected Track**. Name it after the patch.
-2. **Add Articulation** for each one you use, and say how it's chosen:
-   *Keyswitch* (a note name, such as C-1), *CC* (a number and value - with
-   Spitfire's UACC that's CC32), *Program change* or *MIDI channel*. Choose
-   **Dynamics: CC1** for long notes played on the mod wheel, **Velocity** for
-   short notes.
+2. Give it a **Library** name (such as *Spitfire BBC Symphony Orchestra*),
+   then press **Import Articulations…** and open the articulation map you
+   already have for that patch:
+   - a **BabylonWaves Art Conductor** map for Cubase (`.expressionmap`) or
+     Logic (`.plist`), or any other Cubase expression map or Logic
+     articulation set;
+   - a **Reaticulate** bank (`.reabank`). A file with several instruments
+     asks which one.
+
+   Every articulation comes in with what chooses it - keyswitches (several
+   at once, as VSL's Synchron maps use), CCs such as Spitfire's UACC,
+   program changes, MIDI channels - and a guess at its dynamics: **CC1** for
+   long notes played on the mod wheel, **Velocity** for short notes. Check
+   the guesses, and untick articulations you don't need (**Tick All** and
+   **Untick All** help with big maps). Keys used as keyswitches are never
+   played as test notes.
+
+   Without a map, **Add Articulation** for each one and say how it's chosen:
+   *Keyswitch* (a note name, such as C-1), *CC* (a number and value),
+   *Program change* or *MIDI channel*.
 3. Choose the keys, the levels (velocities or CC1 values) and the takes, and
    press **Measure All**. Each instrument is put on a **new track**, waits for
    its samples to load, plays each articulation's test, renders it offline,
@@ -88,9 +103,19 @@ with **Actions › Load ReaScript…**.)
    `Data/Note Fixer/Profiles`, one per articulation; **Skip ones already
    measured** lets a stopped run carry on.
 
+   Each profile keeps everything the test found: for every key and level,
+   when the sound starts, when the attack is heard and when it's done, each
+   take (how much round robins differ) and how loud it is; and for the
+   patch, the keys it plays, the keys that are too loud or too quiet, and
+   how delays change with dynamics. `Library.json` lists every profile.
+   [`docs/profile-format.md`](docs/profile-format.md) describes it all, for
+   scripts to come.
+
 **Fix.** Select MIDI items, open *Fix Selected Items*, check each track's
 instrument (it's guessed from the track's name) and press **Fix Selected
-Items**. Undo puts it back. The page above opens the same profiles.
+Items**. Each note uses the articulation its keyswitches, CC, program change
+or channel chose - or, in a part using Reaticulate, its articulation number.
+Undo puts it back. The page above opens the same profiles.
 
 **For each player:**
 

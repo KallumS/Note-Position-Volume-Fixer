@@ -72,6 +72,50 @@ test("CC switches (Spitfire's UACC on CC32), program changes and channels", func
   ok(plan.changes[d.id].profile == "Trem" and plan.changes[e.id].profile == "Staccato", "channel 2, else fallback")
 end)
 
+test("keyswitch combinations, as VSL's dimension trees: only keys that can't go together turn each other off", function()
+  -- dimension A: C0 (stacc) / C#0 (long); dimension B: F6 (bold) / F#6 (agile)
+  local function combo(name, d, a, b) return profile(name, d, nil, { send = { { kind = "note", pitch = a, vel = 127 }, { kind = "note", pitch = b, vel = 127 } } }) end
+  local sb, sa, lb, la = combo("Stacc Bold", 40, 24, 89), combo("Stacc Agile", 60, 24, 90), combo("Long Bold", 100, 25, 89), combo("Long Agile", 130, 25, 90)
+  local seq = { note(1, 24, 127, 0.05), note(1, 89, 127, 0.05), note(2, 60), note(2.5, 90, 127, 0.05), note(3, 60), note(3.5, 25, 127, 0.05), note(4, 60) }
+  local plan = F.plan(seq, {}, { sb, sa, lb, la }, nil, {})
+  ok(plan.changes[seq[3].id].profile == "Stacc Bold", "both keys: " .. tostring(plan.changes[seq[3].id].profile))
+  ok(plan.changes[seq[5].id].profile == "Stacc Agile", "F#6 replaces F6 and keeps C0: " .. tostring(plan.changes[seq[5].id].profile))
+  ok(plan.changes[seq[7].id].profile == "Long Agile", "C#0 replaces C0 and keeps F#6: " .. tostring(plan.changes[seq[7].id].profile))
+  ok(not plan.changes[seq[1].id] and not plan.changes[seq[4].id], "keyswitches aren't fixed")
+end)
+
+test("one keyswitch whose velocity chooses (Spitfire UACC KS)", function()
+  local function uacc(name, d, v) return profile(name, d, nil, { send = { { kind = "note", pitch = 0, vel = v } } }) end
+  local long, spic = uacc("Long", 100, 1), uacc("Spiccato", 40, 42)
+  local a, b = note(1, 0, 42, 0.05), note(2, 60)
+  local c, d = note(3, 0, 1, 0.05), note(4, 60)
+  local plan = F.plan({ a, b, c, d }, {}, { long, spic }, nil, {})
+  ok(plan.changes[b.id].profile == "Spiccato" and plan.changes[d.id].profile == "Long")
+end)
+
+test("Reaticulate: the program change in the item chooses, whatever the outputs", function()
+  local stacc = profile("Staccato", 40, nil, { program = 40, send = { { kind = "note", pitch = 24, vel = 127 } } })
+  local long = profile("Long", 100, nil, { program = 20, send = { { kind = "note", pitch = 25, vel = 127 } } })
+  local a, b = note(2, 60), note(4, 60)
+  local ev = { { id = 201, t = 1, kind = "cc", chan = 0, cc = 0, value = 1 }, { id = 202, t = 1, kind = "program", chan = 0, value = 40 },
+               { id = 203, t = 3, kind = "program", chan = 0, value = 20 } }
+  local plan = F.plan({ a, b }, ev, { stacc, long }, nil, {})
+  ok(plan.changes[a.id].profile == "Staccato" and plan.changes[b.id].profile == "Long")
+  local c = note(6, 60)
+  plan = F.plan({ note(5, 24, 100, 0.05), c }, {}, { stacc, long }, nil, {})
+  ok(plan.changes[c.id].profile == "Staccato", "and by its keyswitch, where the part has keyswitches instead")
+end)
+
+test("a keyswitch and a CC together, on an output channel", function()
+  local p1 = profile("Mute Long", 90, nil, { send = { { kind = "note", pitch = 24, vel = 127 }, { kind = "cc", cc = 20, value = 127 } } })
+  local p2 = profile("Long", 50, nil, { send = { { kind = "note", pitch = 24, vel = 127 }, { kind = "cc", cc = 20, value = 0 } } })
+  local p3 = profile("Pizz", 20, nil, { channel = 3 })
+  local a, b, c = note(2, 60), note(4, 60), note(5, 60, 120, 0.25, 2)
+  local ev = { { id = 301, t = 1, kind = "cc", chan = 0, cc = 20, value = 0 }, { id = 302, t = 3, kind = "cc", chan = 0, cc = 20, value = 127 } }
+  local plan = F.plan({ note(0.5, 24, 100, 0.05), a, b, c }, ev, { p1, p2, p3 }, nil, {})
+  ok(plan.changes[a.id].profile == "Long" and plan.changes[b.id].profile == "Mute Long" and plan.changes[c.id].profile == "Pizz")
+end)
+
 print("Changes")
 
 test("the loud key gets a lower velocity, and that velocity's delay", function()

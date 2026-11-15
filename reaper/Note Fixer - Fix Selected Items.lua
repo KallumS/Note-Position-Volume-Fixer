@@ -13,15 +13,17 @@
  *                 Needs ReaImGui, from the ReaTeam Extensions repository.
  * Author:         Kallum Shah
  * Links:          https://github.com/KallumS/Note-Position-Volume-Fixer
- * Version:        1.0
+ * Version:        1.1
  * Provides:
  *   npvf_json.lua
  *   npvf_fix.lua
+ *   npvf_maps.lua
  *   npvf_reaper.lua
  *   npvf_ui.lua
 --]]
 
 local TITLE = "Note Fixer - Fix Selected Items"
+local VERSION = "1.1"
 local SECTION = "NoteFixerFix"
 
 local imgui_path = reaper.ImGui_GetBuiltinPath and (reaper.ImGui_GetBuiltinPath() .. "/imgui.lua")
@@ -84,9 +86,11 @@ local function guess(trackName)
   if t == "" then return nil end
   local best, bestLen
   for _, n in ipairs(ui.names) do
-    local l = n:lower()
-    if l == t then return n end
-    if (t:find(l, 1, true) or l:find(t, 1, true)) and (not bestLen or #l > bestLen) then best, bestLen = n, #l end
+    -- "Library / Instrument": the instrument alone counts too
+    for _, l in ipairs({ n:lower(), (n:match(" / (.*)$") or n):lower() }) do
+      if l == t then return n end
+      if (t:find(l, 1, true) or l:find(t, 1, true)) and (not bestLen or #l > bestLen) then best, bestLen = n, #l end
+    end
   end
   return best
 end

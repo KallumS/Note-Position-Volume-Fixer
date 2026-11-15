@@ -291,6 +291,8 @@ local api = {
   defer = function(fn) P.deferred = fn end,
   get_action_context = function() return false, P.scriptPath, 0, 0, -1, -1, -1 end,
   ImGui_GetBuiltinPath = function() return HERE .. "imgui" end,
+  -- boolean retval, string filenameNeed4096
+  GetUserFileNameForRead = function(_, title, _) P.asked = title; if P.fileToOpen then return true, P.fileToOpen end return false, "" end,
   MB = function(msg, title, kind) P.mb[#P.mb + 1] = msg; return kind == 4 and P.mbAnswer or 1 end,
   GetExtState = function(sec, key) return P.ext[sec .. "/" .. key] or "" end,
   SetExtState = function(sec, key, v, _) P.ext[sec .. "/" .. key] = v end,

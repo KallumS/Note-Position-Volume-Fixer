@@ -50,16 +50,59 @@ local function writeFile(p, s)
 end
 R.readFile, R.writeFile = readFile, writeFile
 
-function R.profilePath(instrument, articulation)
+--- "<Library> - <Instrument> - <Articulation>.json", the library left out when there is none.
+function R.profilePath(instrument, articulation, library)
   local n = R.safeName(instrument) .. ((articulation and articulation ~= "") and (" - " .. R.safeName(articulation)) or "")
+  if library and library ~= "" then n = R.safeName(library) .. " - " .. n end
   return R.profileFolder() .. SEP .. n .. ".json"
 end
 
+--- An instrument's name as the Fix window lists it: "<Library> / <Instrument>", or the instrument alone.
+function R.instrumentKey(p)
+  local inst = p.instrument or p.name
+  if p.library and p.library ~= "" then return p.library .. " / " .. inst end
+  return inst
+end
+
 function R.saveProfile(p)
-  local path = R.profilePath(p.instrument or p.name, p.articulation)
+  local path = R.profilePath(p.instrument or p.name, p.articulation, p.library)
   local ok, err = writeFile(path, J.encode(p, " "))
   if not ok then return nil, err end
+  R.writeIndex()
   return path
+end
+
+--[[ Library.json, beside the Profiles folder: one line per profile - what was
+     measured and the headline numbers - so a script can find a patch without
+     opening every file. Rebuilt from the folder after every save.
+     docs/profile-format.md describes it. ]]
+function R.writeIndex()
+  local dir = R.profileFolder()
+  local list = {}
+  local i = 0
+  while true do
+    local f = reaper.EnumerateFiles(dir, i)
+    if not f then break end
+    i = i + 1
+    if f:lower():match("%.json$") then
+      local p = J.decode(readFile(dir .. SEP .. f) or "")
+      if type(p) == "table" and p.kind == "note-position-volume-fixer/profile" and type(p.entries) == "table" then
+        local sum = p.summary or {}
+        list[#list + 1] = {
+          file = "Profiles/" .. f, name = p.name, library = p.library, instrument = p.instrument,
+          articulation = p.articulation, plugin = p.plugin, dynamics = p.dynamics or "velocity",
+          send = p.send, channel = p.channel, program = p.program, created = p.created, version = p.version or 1,
+          range = p.range, medianMs = sum.medianMs, minMs = sum.minMs, maxMs = sum.maxMs,
+          roundRobinSpreadMs = sum.roundRobinSpreadMs, offKeys = sum.offKeys,
+        }
+      end
+    end
+  end
+  table.sort(list, function(a, b) return (a.file or "") < (b.file or "") end)
+  return writeFile(R.folder() .. SEP .. "Library.json", J.encode({
+    kind = "note-position-volume-fixer/library", version = 1,
+    updated = os.date("!%Y-%m-%dT%H:%M:%SZ"), profiles = list,
+  }, " "))
 end
 
 --- Every profile in the folder, grouped by instrument: { [instrument] = { profiles... } }, plus a sorted list of names.
@@ -74,7 +117,7 @@ function R.loadProfiles()
     if f:lower():match("%.json$") then
       local p = J.decode(readFile(dir .. SEP .. f) or "")
       if type(p) == "table" and p.kind == "note-position-volume-fixer/profile" and type(p.entries) == "table" and #p.entries > 0 then
-        local inst = p.instrument or p.name
+        local inst = R.instrumentKey(p)
         if not by[inst] then by[inst] = {}; names[#names + 1] = inst end
         table.insert(by[inst], p)
       end
@@ -92,6 +135,12 @@ function R.loadInstruments()
   return type(t) == "table" and t or {}
 end
 function R.saveInstruments(list) return writeFile(R.folder() .. SEP .. "Instruments.json", J.encode(list, " ")) end
+
+--- Ask for a file to open. Returns its path, or nil if cancelled.
+function R.askForFile(title, ext)
+  local ok, path = reaper.GetUserFileNameForRead("", title, ext or "")
+  if ok and path and path ~= "" then return path end
+end
 
 ------------------------------------------------------------------------------
 -- Track chunks

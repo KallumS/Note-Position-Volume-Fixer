@@ -14,3 +14,5 @@ replaced it.
 | [0006](0006-apples-hig-foundations.md) | Apple's HIG Foundations |
 | [0007](0007-reaper-measures-the-libraries.md) | REAPER measures the libraries, a new track for each |
 | [0008](0008-articulations-by-switch-dynamics-by-velocity-or-cc1.md) | Articulations by their switch; dynamics by velocity or CC1 |
+| [0009](0009-import-articulation-maps.md) | Import articulation maps; articulations are combinations of outputs |
+| [0010](0010-keep-everything-the-test-finds.md) | Keep everything the test finds |

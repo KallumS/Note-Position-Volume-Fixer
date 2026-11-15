@@ -933,18 +933,24 @@ kbd { font: inherit; background: var(--menu); border: 1px solid var(--rule); bor
     if (ownPeak <= 0) return { onset: env.t0 + ks * env.hop, peakDb: pv, baseDb: base, riseDb: 0, maskDb: 0, slope: best, atEdge: true };
     const ownPeakDb = 10 * Math.log10(ownPeak);
     const rise = ownPeakDb - (icept + slope * ks);
-    const drop = o.alignTo === 'start' ? o.startDb : o.attackDb;
+    // where this note's own sound crosses `drop` dB below its peak, walking back from the peak;
     // never closer to what was already there than it can be told apart from it
-    const thrAt = k => Math.max(ownPeak * Math.pow(10, -drop / 10), 0.5 * tail(k));
-    let k = kOwnPeak;
-    while (k > kb0 && own[k - 1 - kb0] >= thrAt(k - 1)) k--;
-    let t = env.t0 + k * env.hop;
-    if (k > kb0) {
-      const a0 = own[k - 1 - kb0] - thrAt(k - 1), a1 = own[k - kb0] - thrAt(k);
-      if (a1 > a0) t = env.t0 + (k - 1 + (-a0) / (a1 - a0)) * env.hop;
-    }
+    const crossing = drop => {
+      const thrAt = k => Math.max(ownPeak * Math.pow(10, -drop / 10), 0.5 * tail(k));
+      let k = kOwnPeak;
+      while (k > kb0 && own[k - 1 - kb0] >= thrAt(k - 1)) k--;
+      let t = env.t0 + k * env.hop;
+      if (k > kb0) {
+        const a0 = own[k - 1 - kb0] - thrAt(k - 1), a1 = own[k - kb0] - thrAt(k);
+        if (a1 > a0) t = env.t0 + (k - 1 + (-a0) / (a1 - a0)) * env.hop;
+      }
+      return t;
+    };
+    const attackTime = crossing(o.attackDb), startTime = crossing(o.startDb);
+    const t = o.alignTo === 'start' ? startTime : attackTime;
     const maskDb = 10 * Math.log10(tail(Math.max(kb0, Math.round((t - env.t0) / env.hop))) / ownPeak);
-    return { onset: t, peakDb: ownPeakDb, baseDb: base, riseDb: Math.max(rise, ownPeakDb - base), maskDb, slope: best, peakTime: env.t0 + kOwnPeak * env.hop, atEdge: ks === ka || ks === kb };
+    // peakTime: when the attack is done, within 1 dB of its peak (the loudest moment itself wanders along a flat top)
+    return { onset: t, attackTime, startTime, peakTime: crossing(1), loudestTime: env.t0 + kOwnPeak * env.hop, peakDb: ownPeakDb, baseDb: base, riseDb: Math.max(rise, ownPeakDb - base), maskDb, slope: best, atEdge: ks === ka || ks === kb };
   }
 
   /** Loudest 50 ms of [t0, t1], in dB. */
@@ -1087,11 +1093,14 @@ kbd { font: inherit; background: var(--menu); border: 1px solid var(--rule); bor
       if (!n.found) return;
       n.onset = m.r.onset;
       n.delay = m.r.onset - n.t;
+      n.startDelay = m.r.startTime - n.t;
+      n.attackDelay = m.r.attackTime - n.t;
+      n.peakDelay = m.r.peakTime - n.t;
       n.riseDb = m.r.riseDb;
       n.atEdge = m.r.atEdge;
       if (m.on === 'harmonics') {
         // how much of the sound at its peak is in the note's harmonics
-        const k = Math.min(benv.db.length - 1, Math.max(0, Math.round((m.r.peakTime - benv.t0) / benv.hop)));
+        const k = Math.min(benv.db.length - 1, Math.max(0, Math.round((m.r.loudestTime - benv.t0) / benv.hop)));
         n.harmonicShareDb = m.r.peakDb - benv.db[k];
       }
     };
@@ -1411,9 +1420,11 @@ kbd { font: inherit; background: var(--menu); border: 1px solid var(--rule); bor
     }
     const entries = [];
     for (const g of groups.values()) {
+      const ms = key => +(median(g.map(n => n[key]).filter(isFinite)) * 1000).toFixed(2);
       entries.push({
         pitch: g[0].pitch, vel: g[0].vel,
         delayMs: +(median(g.map(n => n.delay)) * 1000).toFixed(2),
+        startMs: ms('startDelay'), attackMs: ms('attackDelay'), peakMs: ms('peakDelay'),
         loudDb: +median(g.map(n => n.loudDb)).toFixed(2),
         deviationDb: isFinite(median(g.map(n => n.deviationDb))) ? +median(g.map(n => n.deviationDb)).toFixed(2) : 0,
         spreadMs: +((Math.max.apply(null, g.map(n => n.delay)) - Math.min.apply(null, g.map(n => n.delay))) * 1000).toFixed(2),

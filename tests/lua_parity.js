@@ -50,7 +50,7 @@ function layoutMidi(layout) {
 }
 
 function measureBoth(testOpts, renderOpts) {
-  const optsPath = file('opts.json', JSON.stringify({ test: testOpts, meta: { instrument: 'Test strings', articulation: 'Staccato' } }));
+  const optsPath = file('opts.json', JSON.stringify({ test: testOpts, meta: { instrument: 'Test strings', articulation: 'Staccato', test: testOpts } }));
   const layout = lua('layout', file('layout.json', JSON.stringify(testOpts)));
   const midi = layoutMidi(layout);
   const audio = S.render(midi, renderOpts);
@@ -92,6 +92,34 @@ test('Lua and JavaScript profiles agree key by key', () => {
   ok(Math.abs(base.L.profile.dbPerVelocity - jsProfile.dbPerVelocity) < 0.01, 'dB per velocity step');
 });
 
+test('both sides also note where the sound starts, and where the attack is done', () => {
+  const L = base.L.profile.entries, Jp = jsProfile.entries;
+  let worst = 0;
+  const peakDiff = [];
+  for (let i = 0; i < L.length; i++) {
+    worst = Math.max(worst, Math.abs(L[i].startMs - Jp[i].startMs), Math.abs(L[i].attackMs - Jp[i].attackMs));
+    peakDiff.push(Math.abs(L[i].peakMs - Jp[i].peakMs));
+    ok(L[i].startMs < L[i].attackMs && L[i].attackMs < L[i].peakMs, 'start, then attack, then its end at ' + L[i].pitch);
+    ok(L[i].attackMs === L[i].delayMs, 'lined up on the attack');
+  }
+  ok(worst <= 0.6, 'start and attack differ by up to ' + worst.toFixed(3) + ' ms');
+  // the attack's end is fuzzier where the top of the attack ripples
+  ok(med(peakDiff) <= 0.1 && max(peakDiff) <= 3, 'attack end differs by a median ' + med(peakDiff).toFixed(3) + ', at most ' + max(peakDiff).toFixed(2) + ' ms');
+  // the start of the sound is where the library's sample really begins (its delay), give or take the 3 ms window
+  const err = L.map(e => e.startMs - S.LIBRARY.delayMs(e.pitch, e.vel));
+  ok(med(err) > -1 && med(err) < 6, 'start of sound vs the sample start: median ' + med(err).toFixed(2));
+});
+
+test('a version 2 profile: every take, the range, and a summary', () => {
+  const p = base.L.profile;
+  ok(p.version === 2 && p.range.low === 36 && p.range.high === 84 && p.silentKeys.length === 0, 'range');
+  ok(p.entries.every(e => e.takesMs.length === 2 && e.takes === 2), 'both takes kept');
+  ok(p.summary.found === p.summary.notes && p.summary.byLevel.length === 3, 'summary');
+  ok(p.summary.byLevel[0].delayMs > p.summary.byLevel[2].delayMs, 'soft notes speak later');
+  ok(JSON.stringify(p.summary.offKeys) === JSON.stringify([64, 67, 71]), 'the faulty keys: ' + p.summary.offKeys);
+  ok(p.test && p.test.low === 36 && p.test.takes === 2, 'how it was tested');
+});
+
 test('the Lua profile opens in the page and says where it came from', () => {
   const p = NPVF.checkProfile(base.L.profile);
   ok(p.instrument === 'Test strings' && p.articulation === 'Staccato' && p.name === 'Test strings - Staccato', p.name);
@@ -110,6 +138,12 @@ test('a keyswitch, a CC and a program change are played first, in the lead-in', 
   }
   const ch = lua('layout', file('l.json', JSON.stringify({ low: 60, high: 60, levels: [90], takes: 1, switch: { type: 'channel', value: 3 } })));
   ok(ch.events.every(e => e.chan === 2), 'channel 3 is MIDI channel index 2');
+  // from a map: several outputs at once, in order, with velocity, on the articulation's channel
+  const send = [{ kind: 'note', pitch: 24, vel: 127 }, { kind: 'note', pitch: 90, vel: 127 }, { kind: 'note', pitch: 0, vel: 42 }, { kind: 'cc', cc: 20, value: 5 }];
+  const m = lua('layout', file('l.json', JSON.stringify({ low: 60, high: 60, levels: [90], takes: 1, send, outChannel: 4 })));
+  const outs = m.events.filter(e => e.t < m.notes[0].t && !(e.kind === 'cc' && e.cc === 1)).sort((a, b) => a.t - b.t);
+  ok(outs.length === 4 && outs[0].pitch === 24 && outs[1].pitch === 90 && outs[2].vel === 42 && outs[3].cc === 20, 'all four outputs, in order');
+  ok(m.events.every(e => e.chan === 3), 'on channel 4');
 });
 
 test('long notes with dynamics on CC1: measured per CC1 value', () => {

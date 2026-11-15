@@ -1,0 +1,24 @@
+// A made-up Reaticulate bank file for the tests, in the format of Reaticulate's own banks.
+
+//! g="Test Library/Strings" n="Violins"
+//! id=11111111-0000-0000-0000-000000000001
+Bank * * Test Violins
+
+//! c=long i=legato o=note:12/note:50,100
+20 Legato
+//! c=short i=staccato o=note:13
+40 Staccato
+//! c=short i=pizz o=cc:32,56@3
+56 Pizzicato
+//! spacer=1
+//! c=textured i=list g=2 o=note:20
+100 Con Sordino
+//! f=hidden o=note:21
+101 Hidden One
+
+//! g="Test Library/Strings" n="Cellos"
+Bank 12 2 Test Cellos
+//! c=long o=program:5
+1 Sustain
+//! c=short o=-note@2:14,90/cc:1,127
+2 Spiccato

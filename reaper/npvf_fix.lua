@@ -64,30 +64,71 @@ function F.profileAt(p, pitch, vel)
   }
 end
 
-local function switchMatches(sw, state, note)
-  if not sw or not sw.type or sw.type == "none" then return false end
-  if sw.type == "keyswitch" then return state.keyswitch == sw.value end
-  if sw.type == "cc" then return state.cc[note.chan] and state.cc[note.chan][sw.cc or 32] == sw.value end
-  if sw.type == "program" then return state.program[note.chan] == sw.value end
-  if sw.type == "channel" then return note.chan + 1 == sw.value end
-  return false
+--- What a profile needs to be in force, from its outputs (`send`, `channel`, a Reaticulate `program`)
+--- or, for profiles saved before 1.1, its single `switch`.
+function F.conditions(p)
+  local c = { notes = {}, ccs = {}, programs = {}, channel = p.channel, reaticulate = p.program }
+  local send = p.send
+  if not send and p.switch and p.switch.type then
+    local sw = p.switch
+    send = {}
+    if sw.type == "keyswitch" then send[1] = { kind = "note", pitch = sw.value, vel = sw.vel or 127 }
+    elseif sw.type == "cc" then send[1] = { kind = "cc", cc = sw.cc or 32, value = sw.value }
+    elseif sw.type == "program" then send[1] = { kind = "program", value = sw.value }
+    elseif sw.type == "channel" then c.channel = sw.value end
+  end
+  for _, o in ipairs(send or {}) do
+    if o.kind == "note" then c.notes[#c.notes + 1] = o
+    elseif o.kind == "cc" then c.ccs[#c.ccs + 1] = o
+    elseif o.kind == "program" then c.programs[#c.programs + 1] = o.value end
+  end
+  c.count = #c.notes + #c.ccs + #c.programs + (c.channel and 1 or 0)
+  return c
 end
 
---[[ Plan the fix.
-     notes:  { id, t, tEnd, pitch, vel, chan, cc1 } - every note in the item(s), keyswitches included
-     events: { id, t, kind = "cc"|"program", chan, cc, value } - CCs and program changes
-     profiles: the instrument's profiles; `fallback`: the one for notes no switch chose (may be nil)
-     Returns { changes = { [noteId] = {...} }, moves = { [eventId or noteId] = newT }, minT, counts, warnings } ]]
+--[[ Which articulation is in force, as a part plays.
+
+     Keyswitches latch. A map can need several at once (VSL's Synchron
+     dimension trees: C0 + F#1 + F6), so the state is a set of keys held "on",
+     and pressing a key turns off only the keys it can't be combined with -
+     two keys can be combined if some articulation uses both. A key whose
+     velocity matters (Spitfire's UACC KS: one key, the velocity chooses) is
+     told apart by its velocity. ]]
+local function Switches(profiles)
+  local S = { conds = {}, velMatters = {}, keyswitchPitch = {} }
+  local vels = {}
+  for i, p in ipairs(profiles) do
+    S.conds[i] = F.conditions(p)
+    for _, o in ipairs(S.conds[i].notes) do
+      S.keyswitchPitch[o.pitch] = true
+      vels[o.pitch] = vels[o.pitch] or {}
+      vels[o.pitch][o.vel or 127] = true
+    end
+  end
+  for pitch, set in pairs(vels) do
+    local n = 0
+    for _ in pairs(set) do n = n + 1 end
+    if n > 1 then S.velMatters[pitch] = true end
+  end
+  function S.key(pitch, vel) return S.velMatters[pitch] and (pitch .. ":" .. (vel or 127)) or tostring(pitch) end
+  local together = {}
+  for _, c in ipairs(S.conds) do
+    for _, a in ipairs(c.notes) do
+      for _, b in ipairs(c.notes) do together[S.key(a.pitch, a.vel) .. "|" .. S.key(b.pitch, b.vel)] = true end
+    end
+  end
+  function S.combinable(a, b) return a == b or together[a .. "|" .. b] end
+  return S
+end
+F.Switches = Switches
+
 function F.plan(notes, events, profiles, fallback, opts)
   local o = {}
   for k, v in pairs(F.DEFAULTS) do o[k] = v end
   for k, v in pairs(opts or {}) do o[k] = v end
 
-  local ksPitch = {}
-  for _, p in ipairs(profiles) do
-    if p.switch and p.switch.type == "keyswitch" then ksPitch[p.switch.value] = true end
-  end
-  local function isKeyswitch(n) return ksPitch[n.pitch] or n.pitch <= o.keyswitchMax end
+  local S = Switches(profiles)
+  local function isKeyswitch(n) return S.keyswitchPitch[n.pitch] or n.pitch <= o.keyswitchMax end
 
   -- everything in time order; at the same time, switches first
   local timeline = {}
@@ -99,27 +140,66 @@ function F.plan(notes, events, profiles, fallback, opts)
   end)
 
   local noneProfile
-  for _, p in ipairs(profiles) do if not p.switch or not p.switch.type or p.switch.type == "none" then noneProfile = p end end
+  for i, p in ipairs(profiles) do if S.conds[i].count == 0 and not p.program then noneProfile = p end end
 
-  local state = { keyswitch = nil, cc = {}, program = {} }
+  -- `on`: keyswitch keys held on, with when; cc[chan][cc] = {value, t}; program[chan] = {value, t}
+  local state = { on = {}, cc = {}, program = {} }
   local played, keyswitches = {}, {}
   local counts = { fixed = 0, noProfile = 0, outside = 0, moved = 0, velocity = 0, cc11 = 0 }
+
+  local function choose(n)
+    local best, bestScore, bestT
+    for i, p in ipairs(profiles) do
+      local c = S.conds[i]
+      local score, latest = nil, -math.huge
+      -- a Reaticulate articulation chosen by its program number
+      local pr = state.program[n.chan]
+      if c.reaticulate and pr and pr.value == c.reaticulate then score, latest = 100, pr.t end
+      if not score and c.count > 0 then
+        local okk = true
+        for _, o in ipairs(c.notes) do
+          local t = state.on[S.key(o.pitch, o.vel)]
+          if not t then okk = false; break end
+          latest = max(latest, t)
+        end
+        for _, o in ipairs(c.ccs) do
+          local v = state.cc[n.chan] and state.cc[n.chan][o.cc]
+          if not (v and v.value == o.value) then okk = false; break end
+          latest = max(latest, v.t)
+        end
+        for _, val in ipairs(c.programs) do
+          if not (pr and pr.value == val) then okk = false; break end
+          latest = max(latest, pr.t)
+        end
+        if c.channel and n.chan + 1 ~= c.channel then okk = false end
+        if okk then score = c.count end
+      end
+      -- the most specific match wins; at a draw, the one chosen last
+      if score and (not best or score > bestScore or (score == bestScore and latest > bestT)) then
+        best, bestScore, bestT = p, score, latest
+      end
+    end
+    return best
+  end
+
   for _, item in ipairs(timeline) do
     local e, n = item.event, item.note
     if e then
       if e.kind == "cc" then
         state.cc[e.chan] = state.cc[e.chan] or {}
-        state.cc[e.chan][e.cc] = e.value
+        state.cc[e.chan][e.cc] = { value = e.value, t = e.t }
       elseif e.kind == "program" then
-        state.program[e.chan] = e.value
+        state.program[e.chan] = { value = e.value, t = e.t }
       end
     elseif isKeyswitch(n) then
-      if ksPitch[n.pitch] then state.keyswitch = n.pitch end
+      if S.keyswitchPitch[n.pitch] then
+        local k = S.key(n.pitch, n.vel)
+        for other in pairs(state.on) do if not S.combinable(other, k) then state.on[other] = nil end end
+        state.on[k] = n.t
+      end
       keyswitches[#keyswitches + 1] = n
     else
-      local chosen
-      for _, p in ipairs(profiles) do if switchMatches(p.switch, state, n) then chosen = p; break end end
-      chosen = chosen or noneProfile or fallback
+      local chosen = choose(n) or noneProfile or fallback
       played[#played + 1] = { note = n, profile = chosen }
     end
   end
