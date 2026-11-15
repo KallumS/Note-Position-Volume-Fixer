@@ -43,7 +43,9 @@ const cc = spawnSync('cc', ['-O2', '-std=c99', define, '-Wall', '-Wextra', '-Wer
 if (cc.status !== 0) { console.log(cc.stderr); process.exit(1); }
 
 const call = (fn, args) => JSON.parse(execFileSync(exe, [lua, 'call', fn, file('args.json', JSON.stringify(args))], { maxBuffer: 1 << 28 }).toString());
-const cli = (...a) => JSON.parse(execFileSync('lua5.4', [path.join(ROOT, 'tests/lua/cli.lua'), ...a], { maxBuffer: 1 << 28 }).toString());
+// Homebrew's Lua is `lua`; Debian's is `lua5.4`
+const LUA = process.env.LUA || (spawnSync('lua5.4', ['-v']).status === 0 ? 'lua5.4' : 'lua');
+const cli = (...a) => JSON.parse(execFileSync(LUA, [path.join(ROOT, 'tests/lua/cli.lua'), ...a], { maxBuffer: 1 << 28 }).toString());
 
 function layoutMidi(layout) {
   const ppq = 480, tick = t => Math.round(t * 2 * ppq);

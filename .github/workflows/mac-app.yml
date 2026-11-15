@@ -1,0 +1,49 @@
+# Builds Note Fixer for Mac on Apple Silicon, checks it end to end with Apple's own DLS synth,
+# and uploads NoteFixer-macOS.zip (the app, ad hoc signed, with INSTALL-MAC.txt).
+name: Mac app
+
+on:
+  push:
+    paths:
+      - "mac/**"
+      - "reaper/**"
+      - "src/**"
+      - "tests/**"
+      - "tools/**"
+      - "Note-Position-Volume-Fixer.html"
+      - ".github/workflows/mac-app.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tools
+        run: |
+          brew install lua
+          swift --version
+          node --version
+
+      - name: The bridge (C and Lua), against the REAPER scripts' Lua
+        run: node tests/bridge_test.js
+
+      - name: Build the app
+        run: sh mac/build-app.sh
+
+      - name: Self-test (Apple's DLS synth, offline render, measuring)
+        run: |
+          "mac/build/Note Fixer.app/Contents/MacOS/NoteFixer" --self-test tests/fixtures
+
+      - name: The app starts
+        run: |
+          "mac/build/Note Fixer.app/Contents/MacOS/NoteFixer" &
+          PID=$!
+          sleep 8
+          if kill -0 $PID 2>/dev/null; then echo "running after 8 s"; kill $PID; else echo "the app quit or crashed"; exit 1; fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NoteFixer-macOS
+          path: mac/build/NoteFixer-macOS.zip

@@ -1,0 +1,42 @@
+Note Fixer for Mac
+==================
+
+Measures your sample libraries: it plays every key of an instrument at
+several dynamics, articulation by articulation, and notes down how late and
+how loud each one really sounds. REAPER's "Note Fixer - Fix Selected Items"
+and the Note Position & Volume Fixer page use what it saves to fix your parts.
+
+Needs macOS 13 (Ventura) or later, on Apple Silicon. Your instruments must be
+installed as Audio Units (AU): Kontakt, SINE, Spitfire, Engine and the
+Synchron Player all are.
+
+Installing
+----------
+
+1. Drag "Note Fixer.app" into your Applications folder.
+2. The first time, right-click (or Control-click) it and choose Open, then
+   Open again. macOS asks because the app isn't signed with an Apple
+   Developer ID; after this it opens normally.
+
+   If macOS says it "is damaged and can't be opened", open Terminal and run:
+
+       xattr -dr com.apple.quarantine "/Applications/Note Fixer.app"
+
+   then open it again. (This removes the "downloaded from the internet" mark
+   that macOS puts on files from a browser.)
+
+Using it
+--------
+
+1. Add Instrument..., choose the instrument, load the patch in its window,
+   and press Remember This Patch.
+2. Import Articulations... from a BabylonWaves Art Conductor map for Cubase
+   (.expressionmap) or Logic (.plist), any Cubase expression map, Logic
+   articulation set or Reaticulate bank (.reabank). Or add them by hand.
+3. Choose the keys, levels and takes, and press Measure All.
+
+Profiles go to REAPER's Data/Note Fixer/Profiles folder when REAPER is
+installed (so REAPER's Fix Selected Items finds them), otherwise to
+~/Library/Application Support/Note Fixer/Profiles. "Show in Finder" opens it.
+
+The app includes Lua 5.4 (MIT licence, in Resources/LICENSE-Lua.txt).
