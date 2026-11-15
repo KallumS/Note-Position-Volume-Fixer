@@ -1,6 +1,6 @@
 #!/bin/sh
 # Builds "Note Fixer.app" for Apple Silicon, signs it ad hoc and zips it with the install notes.
-# Runs on a Mac (GitHub Actions' macos-14): sh mac/build-app.sh
+# Runs on a Mac (GitHub Actions' macos-15): sh mac/build-app.sh
 set -e
 cd "$(dirname "$0")/.."
 ROOT=$(pwd)
