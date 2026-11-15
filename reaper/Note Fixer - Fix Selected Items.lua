@@ -18,6 +18,7 @@
  *   npvf_json.lua
  *   npvf_fix.lua
  *   npvf_maps.lua
+ *   npvf_library.lua
  *   npvf_reaper.lua
  *   npvf_ui.lua
 --]]
