@@ -16,3 +16,4 @@ replaced it.
 | [0008](0008-articulations-by-switch-dynamics-by-velocity-or-cc1.md) | Articulations by their switch; dynamics by velocity or CC1 |
 | [0009](0009-import-articulation-maps.md) | Import articulation maps; articulations are combinations of outputs |
 | [0010](0010-keep-everything-the-test-finds.md) | Keep everything the test finds |
+| [0011](0011-a-mac-app-that-hosts-the-instruments.md) | A Mac app that hosts the instruments, measuring with the same Lua |

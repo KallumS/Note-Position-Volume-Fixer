@@ -1,6 +1,6 @@
 # Note Position & Volume Fixer
 
-Two halves sharing one profile format:
+Three parts sharing one profile format:
 
 - **The page** - a one-file web page (`Note-Position-Volume-Fixer.html`,
   built from `src/`) that measures a render of a MIDI part - where each note
@@ -13,6 +13,9 @@ Two halves sharing one profile format:
   each note by the articulation its switch chose (0007, 0008). The user
   focuses on REAPER for measuring, with SINE, Kontakt, Spitfire, Engine and
   Synchron Player libraries.
+- **Note Fixer for Mac** (`mac/`) - the measuring as an Apple Silicon app
+  that hosts the Audio Unit instruments itself (0011), measuring with the
+  REAPER scripts' own Lua through a C bridge. Built only on GitHub Actions.
 
 The user is not a developer. Explain in plain words, show pictures of what
 changed, and keep the README's "Use" section true: it is how they learn it.
@@ -52,6 +55,14 @@ Their main DAW is Ableton Live; Cubase and REAPER matter too.
 | `docs/profile-format.md` | **What is saved**: profiles (version 2), `Library.json`, `Instruments.json`. Change it with the format. |
 | `tests/lua_parity.js` | Lua and the engine measure the same renders (and plan the same fix) and must agree. |
 | `tests/lua/test_scripts.lua` | Both windows end to end in `reaper_mock.lua` + `imgui_mock.lua`; the mock's *Apply FX* renders the made-up library via `render_cli.js`. |
+| `mac/Sources/NoteFixer/*.swift` | The Mac app: `AUHost` (list, load, state, the plug-in's window, offline render), `Store` (instruments, settings, the run), `ContentView`, `Theme` (house colours), `Bridge` (Swift over the C bridge), `SelfTest`. |
+| `mac/Sources/NPVFBridge` | C: one Lua state, `npvf_call` (JSON in and out) and `npvf_measure` (audio in, read note by note, stoppable). |
+| `mac/Sources/CLua` | Lua 5.4.6, unchanged (headers in `include/` for SwiftPM). |
+| `mac/Lua/npvf_app.lua` | The app's JSON API over the shared Lua. |
+| `reaper/npvf_library.lua` | Profile file names and `Library.json`, for REAPER and the app alike. |
+| `tools/stage_lua.sh` | Copies the Lua the app runs into one folder: the build and `tests/bridge_test.js` both use it. |
+| `tests/bridge_test.js` | Builds the bridge with `cc` and checks it against the REAPER scripts' Lua. |
+| `.github/workflows/mac-app.yml` | `macos-15`: bridge test, `mac/build-app.sh`, `NoteFixer --self-test tests/fixtures`, the app starts, upload. |
 | `index.xml` | ReaPack index: one package, both scripts, every source pinned to a commit. New version = new `<version>` block with a new hash; never edit an old one. |
 
 ## Working in it
@@ -157,6 +168,24 @@ A fresh container has no Lua: `apt-get update && apt-get install -y lua5.4`.
   with noSort, then sorted, then CC11s inserted.
 - Middle C is C3 in the windows too (`U.noteName`, `U.parseNote`); REAPER
   itself may show C4.
+
+## Mac app rules that are easy to break
+
+- **Swift is only built on GitHub's Mac.** After pushing, check the *Mac
+  app* run (`mcp__github__actions_list`, then `get_job_logs`); a failure is
+  read from the log and fixed, never skipped. `macos-14` runners are gone;
+  use `macos-15` or later.
+- **The app runs the REAPER scripts' Lua.** A Lua change is a change to the
+  app too: `node tests/bridge_test.js` and the CI self-test cover it. The
+  app's own Lua is only `mac/Lua/npvf_app.lua`; anything shared goes in
+  `reaper/` and into `tools/stage_lua.sh`.
+- **Every MIDI event on its exact sample**: scheduled through
+  `scheduleMIDIEventBlock` at `AUEventSampleTimeImmediate + offset` before
+  the chunk it falls in is rendered. The self-test proves it with a 0.1 ms
+  shift.
+- **Stop** is a lock-protected flag (`StopFlag`) read by the render and the
+  measuring on their background threads.
+- The app is macOS 13+: don't use APIs newer than that without a check.
 
 ## Colour and Apple's HIG
 

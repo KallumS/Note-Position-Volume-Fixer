@@ -37,3 +37,18 @@ guessed.
 | Long work shows progress and can be stopped | Met: a progress bar, the step in words, and Stop. |
 | Text size | Not met: no 100-200% choice yet, which Good Idea has. |
 | VoiceOver | Not possible: ReaImGui draws its own window. |
+
+## The Mac app (Note Fixer for Mac)
+
+| Item | Verdict |
+| --- | --- |
+| Always dark, the house colours | Met: `Theme.swift` holds the same values; `preferredColorScheme(.dark)`. |
+| Ink on every button, yellow only for chosen, with a bar under it | Met: `HouseButton`. |
+| Field edges 3:1 | Met: `#8A919C`. |
+| System font, 13 points, controls 28 points | Met. |
+| Help on every control | Met: each has a tooltip that starts with its name. |
+| Keyboard alone | Met as far as SwiftUI's own controls go (Tab, Space, Return, Esc closes the instrument list). Not checked with Full Keyboard Access. |
+| VoiceOver | SwiftUI's controls are read by name; headings are marked as headings. Not checked with VoiceOver. |
+| Recover from mistakes | Met: removing an instrument or replacing articulations asks first; profiles are kept. |
+| Long work shows progress and can be stopped | Met. |
+| Signing | Ad hoc only (0011): macOS asks once before opening it. |

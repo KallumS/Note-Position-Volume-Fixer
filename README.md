@@ -132,6 +132,33 @@ with: a different release, attack or "tightness" setting needs measuring
 again. Effects after the instrument (reverb) are switched off on the test
 track while measuring.
 
+### On a Mac: measure without REAPER
+
+**Note Fixer for Mac** does what *Measure Libraries* does, on its own: it
+loads your instruments' Audio Unit plug-ins itself (Kontakt, SINE, Spitfire,
+Engine and the Synchron Player all come as Audio Units), plays each test
+faster than real time and saves the same profiles - into REAPER's profiles
+folder when REAPER is installed, so *Fix Selected Items* finds them.
+
+**Get it.** Each build is on the repository's **Actions** tab, under *Mac
+app*: open the latest run with a green tick and download
+**NoteFixer-macOS** at the bottom. Unzip it and drag *Note Fixer.app* into
+Applications. The first time, right-click it and choose **Open** (it isn't
+signed with an Apple Developer ID, so macOS asks once). `INSTALL-MAC.txt`
+inside the zip has the details. Needs macOS 13 or later on Apple Silicon.
+
+**Use it.**
+
+1. **Add Instrument…** and choose it from the list of instruments on your
+   Mac. Its own window opens: load the patch, then press **Remember This
+   Patch**. (Each test loads that patch fresh.)
+2. Set the **Library**, **Import Articulations…** from your Art Conductor
+   (or other) map, and check each articulation's dynamics - as in REAPER.
+3. Choose the keys, levels and takes and press **Measure All**.
+
+**Open the Fixer Page** opens the page above, to fix a MIDI file from a
+profile.
+
 ### What the settings do
 
 | Setting | What it does |
@@ -175,6 +202,12 @@ npm run test:ui     # builds, then drives the page in Chromium (needs Playwright
 npm run test:lua    # the REAPER scripts: Lua tests, Lua against the engine, the windows in a mock REAPER (needs lua5.4)
 npm run test:all    # everything
 ```
+
+`mac/` is the Mac app: Swift for the window and the plug-ins, and Lua
+(built in, through `mac/Sources/NPVFBridge`) for the measuring - the very
+files the REAPER scripts use. `node tests/bridge_test.js` tests the bridge
+anywhere; GitHub Actions builds the app (`.github/workflows/mac-app.yml`) and
+runs `NoteFixer --self-test`, which measures Apple's built-in DLS synth.
 
 `src/engine.js` does all the measuring and MIDI writing and runs in Node and
 the browser alike; `src/app.html` and `src/app.js` are the page. `reaper/`
