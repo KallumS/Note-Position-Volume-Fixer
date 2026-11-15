@@ -186,8 +186,18 @@ final class PluginWindows {
     let info = raw.load(as: AudioUnitCocoaViewInfo.self)
     let url = info.mCocoaAUViewBundleLocation.takeUnretainedValue() as URL
     let className = info.mCocoaAUViewClass.takeUnretainedValue() as String
-    guard let bundle = Bundle(url: url), let cls = bundle.classNamed(className) as? NSObject.Type,
-          let factory = cls.init() as? AUCocoaUIBase else { return nil }
+    guard let bundle = Bundle(url: url), let cls = bundle.classNamed(className) as? NSObject.Type else { return nil }
+    let object = cls.init()
+    // The view factory answers AUCocoaUIBase's uiViewForAudioUnit:withSize:, called here through the runtime
+    // (Swift doesn't see that protocol from CoreAudioKit).
+    guard object.responds(to: #selector(CocoaViewFactory.uiView(forAudioUnit:with:))) else { return nil }
+    let factory = unsafeBitCast(object, to: CocoaViewFactory.self)
     return factory.uiView(forAudioUnit: au, with: NSSize(width: 800, height: 560))
   }
+}
+
+/// AUCocoaUIBase's one method, as a version 2 Audio Unit's view factory has it.
+@objc private protocol CocoaViewFactory {
+  @objc(uiViewForAudioUnit:withSize:)
+  func uiView(forAudioUnit unit: AudioUnit, with size: NSSize) -> NSView?
 }
