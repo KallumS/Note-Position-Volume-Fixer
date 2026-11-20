@@ -31,6 +31,11 @@ Their main DAW is Ableton Live; Cubase and REAPER matter too.
 - [`docs/apple-hig-review.md`](docs/apple-hig-review.md) - the page against
   Apple's HIG Foundations.
 - [`docs/sessions/`](docs/sessions/) - one log per working session.
+- [`docs/HANDOVER.md`](docs/HANDOVER.md) - **start here in a new session**:
+  where things stand, what has never been tried for real, what's next.
+- [`docs/chat/`](docs/chat/) - the whole first conversation (13-20 November
+  2026), exported by `tools/export_chat.py` from the session record before
+  the chat was cleared. Every user request is there in their own words.
 
 ## Shape of it
 
@@ -63,7 +68,8 @@ Their main DAW is Ableton Live; Cubase and REAPER matter too.
 | `tools/stage_lua.sh` | Copies the Lua the app runs into one folder: the build and `tests/bridge_test.js` both use it. |
 | `tests/bridge_test.js` | Builds the bridge with `cc` and checks it against the REAPER scripts' Lua. |
 | `.github/workflows/mac-app.yml` | `macos-15`: bridge test, `mac/build-app.sh`, `NoteFixer --self-test tests/fixtures`, the app starts, upload. |
-| `index.xml` | ReaPack index: one package, both scripts, every source pinned to a commit. New version = new `<version>` block with a new hash; never edit an old one. |
+| `index.xml` | ReaPack index: one package, both scripts, every source pinned to a commit. New version = new `<version>` block with a new hash; never edit an old one. **The next version must add `npvf_library.lua`** (the scripts load it since 1.1 was published). |
+| `tools/export_chat.py` | Turns a Claude Code session record (`~/.claude/projects/.../<session>.jsonl`) into `docs/chat/*.md`: messages and replies kept, private reasoning, tool output and email addresses left out. |
 
 ## Working in it
 

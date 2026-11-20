@@ -200,7 +200,8 @@ npm test            # the engine: 35 checks against a made-up library with known
 npm run build       # writes Note-Position-Volume-Fixer.html from src/
 npm run test:ui     # builds, then drives the page in Chromium (needs Playwright)
 npm run test:lua    # the REAPER scripts: Lua tests, Lua against the engine, the windows in a mock REAPER (needs lua5.4)
-npm run test:all    # everything
+npm run test:bridge # the Mac app's Lua-in-C bridge, built with cc, against the REAPER scripts' Lua
+npm run test:all    # everything (the Mac app itself is built and checked on GitHub Actions)
 ```
 
 `mac/` is the Mac app: Swift for the window and the plug-ins, and Lua
@@ -214,6 +215,13 @@ the browser alike; `src/app.html` and `src/app.js` are the page. `reaper/`
 holds the REAPER scripts; their measuring is a Lua port of the engine's, kept
 in step by `tests/lua_parity.js`. See
 [`CLAUDE.md`](CLAUDE.md) and [`docs/decisions/`](docs/decisions/README.md).
+
+## How it was made
+
+The whole conversation that designed and built this - the research, every
+request and every reply - is kept in [`docs/chat/`](docs/chat/), and
+[`docs/HANDOVER.md`](docs/HANDOVER.md) is where to start a new session:
+what's done, what's never been tried for real, and what's next.
 
 ## Licence
 

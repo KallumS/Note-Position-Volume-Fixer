@@ -97,6 +97,19 @@ installation (decision 0001). For Ableton, C next: a Max for Live MIDI Tool
 that reads a profile saved by this tool and fixes the selected clip in place.
 D is the long-term ideal but a much larger project.
 
+**What was built since** (November 2026):
+
+| | Built as | Decision |
+| --- | --- | --- |
+| A, B | The page | 0001-0004 |
+| E | *Note Fixer* for REAPER: Measure Libraries plays every key of each instrument, articulation by articulation, on a new track, offline; Fix Selected Items fixes items, each note by its own articulation | 0007-0010 |
+| D, in part | *Note Fixer for Mac*: hosts the Audio Unit instruments itself and plays the tests offline, faster than real time - for measuring, not real-time fixing | 0011 |
+| C | Not yet | |
+
+Both measuring tools read the articulations from BabylonWaves Art Conductor
+maps for Cubase and Logic, and Reaticulate banks (0009), and save
+everything they find (0010, `docs/profile-format.md`).
+
 ## 5. How accurate it is
 
 On the made-up library in `tests/synth.js` (delays 45-125 ms that vary by key
